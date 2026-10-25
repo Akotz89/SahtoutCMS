@@ -18,10 +18,13 @@ return [
     'solo_pvp_race_alt' => 'Race',
     'solo_pvp_class_alt' => 'Class',
 
-'solo_pvp_search_placeholder' => 'Search character name...',
-'solo_pvp_search_btn' => 'Search',
-'solo_pvp_reset_btn' => 'Reset',
-'solo_pvp_search_min' => 'Please enter at least 2 characters.',
+    'solo_pvp_search_placeholder' => 'Search character name...',
+    'solo_pvp_search_btn' => 'Search',
+    'solo_pvp_reset_btn' => 'Reset',
+    'solo_pvp_search_min' => 'Please enter at least 2 characters.',
 
+    // Bracket Filters
+    'solo_pvp_filter_all' => 'All Levels',
+    'solo_pvp_filter_80' => 'Level 80',
+    'solo_pvp_filter_under80' => 'Under Level 80',
 ];
-?>

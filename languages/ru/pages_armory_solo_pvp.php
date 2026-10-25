@@ -19,9 +19,12 @@ return [
     'solo_pvp_class_alt' => 'Класс',
 
     'solo_pvp_search_placeholder' => 'Поиск по имени персонажа...',
-'solo_pvp_search_btn' => 'Поиск',
-'solo_pvp_reset_btn' => 'Сброс',
-'solo_pvp_search_min' => 'Пожалуйста, введите минимум 2 символа.',
+    'solo_pvp_search_btn' => 'Поиск',
+    'solo_pvp_reset_btn' => 'Сброс',
+    'solo_pvp_search_min' => 'Пожалуйста, введите минимум 2 символа.',
 
+    // Фильтры уровней
+    'solo_pvp_filter_all' => 'Все уровни',
+    'solo_pvp_filter_80' => '80 уровень',
+    'solo_pvp_filter_under80' => 'Ниже 80 уровня',
 ];
-?>

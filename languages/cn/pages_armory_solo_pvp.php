@@ -17,8 +17,14 @@ return [
     'solo_pvp_faction_alt' => '阵营',
     'solo_pvp_race_alt' => '种族',
     'solo_pvp_class_alt' => '职业',
+
     'solo_pvp_search_placeholder' => '搜索角色名...',
     'solo_pvp_search_btn' => '搜索',
     'solo_pvp_reset_btn' => '重置',
     'solo_pvp_search_min' => '请输入至少 2 个字符。',
+
+    // 等级筛选
+    'solo_pvp_filter_all' => '全等级',
+    'solo_pvp_filter_80' => '80级',
+    'solo_pvp_filter_under80' => '80级以下',
 ];

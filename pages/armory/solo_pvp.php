@@ -28,6 +28,19 @@ if ($soloPvPDisplay === 'humans_only' && isset($char_db)) {
     }
 }
 
+// Level Filter (all | 80 | under80)
+$bracket = $_GET['bracket'] ?? 'all';
+if (!in_array($bracket, ['all', '80', 'under80'], true)) {
+    $bracket = 'all';
+}
+
+$bracketWhereClause = '';
+if ($bracket === '80') {
+    $bracketWhereClause = " AND c.level = 80 ";
+} elseif ($bracket === 'under80') {
+    $bracketWhereClause = " AND c.level < 80 ";
+}
+
 $search = '';
 $search_error = '';
 
@@ -47,16 +60,22 @@ if (isset($_GET['search'])) {
 $players = [];
 $dbErrorOccurred = false;
 
-// --- Prepared Statement & DB Fetch Refactor ---
+// --- Prepared Statement & DB Fetch ---
 try {
+    $baseSql = "
+        SELECT c.guid, c.name, c.race, c.class, c.level, c.gender, c.totalKills, g.name AS guild_name
+        FROM characters c
+        LEFT JOIN guild_member gm ON c.guid = gm.guid
+        LEFT JOIN guild g ON gm.guildid = g.guildid
+    ";
+
+    $result = false;
+    $stmt = null;
+
     if ($search !== '') {
-        $sql = "
-            SELECT c.guid, c.name, c.race, c.class, c.level, c.gender, c.totalKills, g.name AS guild_name
-            FROM characters c
-            LEFT JOIN guild_member gm ON c.guid = gm.guid
-            LEFT JOIN guild g ON gm.guildid = g.guildid
-            WHERE c.name LIKE ? {$botWhereClause}
-            ORDER BY c.level DESC, c.totalKills DESC
+        $sql = $baseSql . "
+            WHERE LOWER(c.name) LIKE LOWER(?) {$bracketWhereClause} {$botWhereClause}
+            ORDER BY c.totalKills DESC, c.level DESC
             LIMIT 50
         ";
 
@@ -65,71 +84,56 @@ try {
             $stmt->bind_param('s', $like);
             $stmt->execute();
             $result = $stmt->get_result();
-
-            if ($result) {
-                while ($row = $result->fetch_assoc()) {
-                    $players[] = [
-                        'guid'       => (int)$row['guid'],
-                        'name'       => (string)$row['name'],
-                        'race'       => (int)$row['race'],
-                        'class'      => (int)$row['class'],
-                        'gender'     => (int)$row['gender'],
-                        'level'      => (int)$row['level'],
-                        'kills'      => (int)$row['totalKills'],
-                        'guild_name' => $row['guild_name'] ?? translate('solo_pvp_no_guild', 'No Guild')
-                    ];
-                }
-                $result->free();
-            }
-            $stmt->close();
         }
     } else {
-        // Non-search query stays standard
-        $sql = "
-            SELECT c.guid, c.name, c.race, c.class, c.level, c.gender, c.totalKills, g.name AS guild_name
-            FROM characters c
-            LEFT JOIN guild_member gm ON c.guid = gm.guid
-            LEFT JOIN guild g ON gm.guildid = g.guildid
-            WHERE 1=1 {$botWhereClause}
-            ORDER BY c.level DESC, c.totalKills DESC
+        $sql = $baseSql . "
+            WHERE 1=1 {$bracketWhereClause} {$botWhereClause}
+            ORDER BY c.totalKills DESC, c.level DESC
             LIMIT 50
         ";
         $result = $char_db->query($sql);
-        if ($result) {
-            while ($row = $result->fetch_assoc()) {
-                $players[] = [
-                    'guid'       => (int)$row['guid'],
-                    'name'       => (string)$row['name'],
-                    'race'       => (int)$row['race'],
-                    'class'      => (int)$row['class'],
-                    'gender'     => (int)$row['gender'],
-                    'level'      => (int)$row['level'],
-                    'kills'      => (int)$row['totalKills'],
-                    'guild_name' => $row['guild_name'] ?? translate('solo_pvp_no_guild', 'No Guild')
-                ];
-            }
-            $result->free();
+    }
+
+    if ($result) {
+        while ($row = $result->fetch_assoc()) {
+            $players[] = [
+                'guid'       => (int)$row['guid'],
+                'name'       => (string)$row['name'],
+                'race'       => (int)$row['race'],
+                'class'      => (int)$row['class'],
+                'gender'     => (int)$row['gender'],
+                'level'      => (int)$row['level'],
+                'kills'      => (int)$row['totalKills'],
+                'guild_name' => $row['guild_name'] ?? translate('solo_pvp_no_guild', 'No Guild')
+            ];
         }
+        $result->free();
+    }
+
+    if ($stmt) {
+        $stmt->close();
     }
 } catch (Throwable $e) {
     error_log("Solo PvP Query Exception: " . $e->getMessage());
     $dbErrorOccurred = true;
 }
+
 // Faction helper
-function getFaction($race) {
+function getFaction(int $race): string {
     $alliance = [1, 3, 4, 7, 11, 22, 25, 29];
-    return in_array((int)$race, $alliance, true) ? 'Alliance' : 'Horde';
+    return in_array($race, $alliance, true) ? 'Alliance' : 'Horde';
 }
 
 // Image paths
-function factionIcon($race) {
+function factionIcon(int $race): string {
     global $base_path;
     $faction = getFaction($race);
     return $base_path . "img/accountimg/faction/" . strtolower($faction) . ".png";
 }
-function raceIcon($race, $gender) {
+
+function raceIcon(int $race, int $gender): string {
     global $base_path;
-    $genderFolder = ((int)$gender === 0) ? 'male' : 'female';
+    $genderFolder = ($gender === 0) ? 'male' : 'female';
     $raceMap = [
         1 => 'human', 2 => 'orc', 3 => 'dwarf', 4 => 'nightelf',
         5 => 'undead', 6 => 'tauren', 7 => 'gnome', 8 => 'troll',
@@ -137,19 +141,18 @@ function raceIcon($race, $gender) {
         22 => 'worgen', 25 => 'pandaren_alliance', 26 => 'pandaren_horde',
         29 => 'voidelf'
     ];
-    $raceInt = (int)$race;
-    $raceName = $raceMap[$raceInt] ?? 'unknown';
+    $raceName = $raceMap[$race] ?? 'unknown';
     return $base_path . "img/accountimg/race/{$genderFolder}/{$raceName}.png";
 }
-function classIcon($class) {
+
+function classIcon(int $class): string {
     global $base_path;
     $classMap = [
         1 => 'warrior', 2 => 'paladin', 3 => 'hunter', 4 => 'rogue',
         5 => 'priest', 6 => 'deathknight', 7 => 'shaman', 8 => 'mage',
         9 => 'warlock', 10 => 'monk', 11 => 'druid', 12 => 'demonhunter'
     ];
-    $classInt = (int)$class;
-    $className = $classMap[$classInt] ?? 'unknown';
+    $className = $classMap[$class] ?? 'unknown';
     return $base_path . "img/accountimg/class/{$className}.webp";
 }
 
@@ -324,6 +327,24 @@ ob_start();
             color: #f2cf5b;
             box-shadow: 0 0 20px rgba(242, 207, 82, 0.15);
         }
+
+        .filter-tab {
+            background: rgba(10, 14, 22, 0.6);
+            border: 1px solid rgba(201, 162, 39, 0.3);
+            color: rgba(255, 255, 255, 0.75);
+            transition: all 0.25s ease;
+            font-weight: 600;
+        }
+        .filter-tab:hover {
+            border-color: #f2cf5b;
+            color: #f2cf5b;
+        }
+        .filter-tab.active {
+            background: linear-gradient(135deg, rgba(242, 207, 82, 0.25), rgba(201, 162, 39, 0.15));
+            border-color: #f2cf5b;
+            color: #f2cf5b;
+            box-shadow: 0 0 15px rgba(242, 207, 82, 0.2);
+        }
         
         .player-link { color: #ffffff; text-decoration: none; transition: all 0.2s ease; }
         .player-link:hover { text-decoration: underline; color: #f2cf5b; }
@@ -366,6 +387,22 @@ require_once $project_root . 'includes/header.php';
             <!-- Navigation -->
             <?php include_once $project_root . 'includes/arenanavbar.php'; ?>
 
+            <!-- Level Bracket Filter -->
+            <div class="flex flex-wrap justify-center items-center gap-3 mb-6">
+                <a href="<?php echo htmlspecialchars($base_path . 'armory/solo_pvp?bracket=all' . ($search !== '' ? '&search=' . urlencode($search) : ''), ENT_QUOTES, 'UTF-8'); ?>"
+                   class="filter-tab px-5 py-2 rounded-lg text-xs md:text-sm <?php echo $bracket === 'all' ? 'active' : ''; ?>">
+                    <?php echo translate('solo_pvp_filter_all', 'All Levels'); ?>
+                </a>
+                <a href="<?php echo htmlspecialchars($base_path . 'armory/solo_pvp?bracket=80' . ($search !== '' ? '&search=' . urlencode($search) : ''), ENT_QUOTES, 'UTF-8'); ?>"
+                   class="filter-tab px-5 py-2 rounded-lg text-xs md:text-sm <?php echo $bracket === '80' ? 'active' : ''; ?>">
+                    <?php echo translate('solo_pvp_filter_80', 'Level 80'); ?>
+                </a>
+                <a href="<?php echo htmlspecialchars($base_path . 'armory/solo_pvp?bracket=under80' . ($search !== '' ? '&search=' . urlencode($search) : ''), ENT_QUOTES, 'UTF-8'); ?>"
+                   class="filter-tab px-5 py-2 rounded-lg text-xs md:text-sm <?php echo $bracket === 'under80' ? 'active' : ''; ?>">
+                    <?php echo translate('solo_pvp_filter_under80', 'Under Level 80'); ?>
+                </a>
+            </div>
+
             <!-- Search Error -->
             <?php if (!empty($search_error)): ?>
                 <div class="mb-4 text-center text-red-400 font-semibold text-sm">
@@ -381,6 +418,7 @@ require_once $project_root . 'includes/header.php';
 
             <!-- Search Form -->
             <form method="get" class="mb-8 flex flex-col sm:flex-row justify-center items-center gap-3">
+                <input type="hidden" name="bracket" value="<?php echo htmlspecialchars($bracket, ENT_QUOTES, 'UTF-8'); ?>">
                 <input 
                     type="text" 
                     name="search" 
@@ -398,7 +436,7 @@ require_once $project_root . 'includes/header.php';
                 </button>
 
                 <?php if ($search !== ''): ?>
-                    <a href="<?php echo htmlspecialchars($base_path, ENT_QUOTES, 'UTF-8'); ?>armory/solo_pvp" class="reset-btn px-5 py-2.5 rounded-lg transition-all duration-300 flex items-center gap-2">
+                    <a href="<?php echo htmlspecialchars($base_path . 'armory/solo_pvp?bracket=' . urlencode($bracket), ENT_QUOTES, 'UTF-8'); ?>" class="reset-btn px-5 py-2.5 rounded-lg transition-all duration-300 flex items-center gap-2">
                         <i class="fas fa-times"></i> <?php echo translate('solo_pvp_reset_btn', 'Reset'); ?>
                     </a>
                 <?php endif; ?>
@@ -432,7 +470,7 @@ require_once $project_root . 'includes/header.php';
                             $rank = 1;
                             $playerCount = count($players);
                             foreach ($players as $p):
-                                $guid = $p['guid'];
+                                $guid = (int)$p['guid'];
                                 $charUrl = htmlspecialchars($base_path . 'character?guid=' . $guid, ENT_QUOTES, 'UTF-8');
                                 $pName = htmlspecialchars($p['name'], ENT_QUOTES, 'UTF-8');
                                 $guildName = htmlspecialchars($p['guild_name'], ENT_QUOTES, 'UTF-8');
@@ -457,7 +495,7 @@ require_once $project_root . 'includes/header.php';
                                 <tr class="<?php echo $rowClass; ?> transition-all duration-200 border-b border-gray-700/30 last:border-0" onclick="window.location='<?php echo $charUrl; ?>';" style="cursor:pointer;">
                                     <td class="py-3.5 px-3 md:px-6 font-bold text-[#f2cf5b] whitespace-nowrap"><?php echo $rankDisplay; ?></td>
                                     <td class="py-3.5 px-3 md:px-6 text-left whitespace-nowrap">
-                                        <a href="<?php echo $charUrl; ?>" class="player-link font-semibold hover:text-[#f2cf5b] transition-colors duration-200">
+                                        <a href="<?php echo $charUrl; ?>" onclick="event.stopPropagation();" class="player-link font-semibold hover:text-[#f2cf5b] transition-colors duration-200">
                                             <?php echo $pName; ?>
                                         </a>
                                     </td>
@@ -471,8 +509,8 @@ require_once $project_root . 'includes/header.php';
                                     <td class="py-3.5 px-3 md:px-6 hidden md:table-cell whitespace-nowrap">
                                         <img src="<?php echo htmlspecialchars(classIcon($p['class']), ENT_QUOTES, 'UTF-8'); ?>" alt="<?php echo translate('solo_pvp_class_alt', 'Class'); ?>" class="inline-block w-6 h-6 rounded-full shadow-md">
                                     </td>
-                                    <td class="py-3.5 px-3 md:px-6 font-bold text-[#f2cf5b] whitespace-nowrap"><?php echo $p['level']; ?></td>
-                                    <td class="py-3.5 px-3 md:px-6 font-extrabold text-[#2ecc71] text-base md:text-lg whitespace-nowrap"><?php echo $p['kills']; ?></td>
+                                    <td class="py-3.5 px-3 md:px-6 font-bold text-[#f2cf5b] whitespace-nowrap"><?php echo (int)$p['level']; ?></td>
+                                    <td class="py-3.5 px-3 md:px-6 font-extrabold text-[#2ecc71] text-base md:text-lg whitespace-nowrap"><?php echo (int)$p['kills']; ?></td>
                                 </tr>
                             <?php 
                                 $rank++;

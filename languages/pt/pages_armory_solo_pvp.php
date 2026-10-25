@@ -9,7 +9,7 @@ return [
     'solo_pvp_race' => 'Raça',
     'solo_pvp_class' => 'Classe',
     'solo_pvp_level' => 'Nível',
-    'solo_pvp_kills' => 'Mortes PvP',
+    'solo_pvp_kills' => 'Abates JxJ',
     'solo_pvp_no_players' => 'Nenhum jogador encontrado.',
     'solo_pvp_no_guild' => 'Sem Guilda',
     'solo_pvp_faction_alliance' => 'Aliança',
@@ -19,8 +19,12 @@ return [
     'solo_pvp_class_alt' => 'Classe',
 
     'solo_pvp_search_placeholder' => 'Pesquisar nome do personagem...',
-'solo_pvp_search_btn' => 'Pesquisar',
-'solo_pvp_reset_btn' => 'Redefinir',
-'solo_pvp_search_min' => 'Por favor, insira pelo menos 2 caracteres.',
+    'solo_pvp_search_btn' => 'Pesquisar',
+    'solo_pvp_reset_btn' => 'Redefinir',
+    'solo_pvp_search_min' => 'Por favor, insira pelo menos 2 caracteres.',
 
+    // Filtros por nível
+    'solo_pvp_filter_all' => 'Todos os níveis',
+    'solo_pvp_filter_80' => 'Nível 80',
+    'solo_pvp_filter_under80' => 'Abaixo do nível 80',
 ];

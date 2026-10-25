@@ -9,7 +9,7 @@ return [
     'solo_pvp_race' => 'Race',
     'solo_pvp_class' => 'Classe',
     'solo_pvp_level' => 'Niveau',
-    'solo_pvp_kills' => 'Tue en PVP',
+    'solo_pvp_kills' => 'Victoires JcJ',
     'solo_pvp_no_players' => 'Aucun joueur trouvé.',
     'solo_pvp_no_guild' => 'Sans guilde',
     'solo_pvp_faction_alliance' => 'Alliance',
@@ -19,9 +19,12 @@ return [
     'solo_pvp_class_alt' => 'Classe',
 
     'solo_pvp_search_placeholder' => 'Rechercher un personnage...',
-'solo_pvp_search_btn' => 'Rechercher',
-'solo_pvp_reset_btn' => 'Réinitialiser',
-'solo_pvp_search_min' => 'Veuillez entrer au moins 2 caractères.',
+    'solo_pvp_search_btn' => 'Rechercher',
+    'solo_pvp_reset_btn' => 'Réinitialiser',
+    'solo_pvp_search_min' => 'Veuillez entrer au moins 2 caractères.',
 
+    // Filtres par tranche de niveau
+    'solo_pvp_filter_all' => 'Tous les niveaux',
+    'solo_pvp_filter_80' => 'Niveau 80',
+    'solo_pvp_filter_under80' => 'Moins de niveau 80',
 ];
-?>
