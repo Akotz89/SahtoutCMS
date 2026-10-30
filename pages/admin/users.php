@@ -3,6 +3,7 @@ define('ALLOWED_ACCESS', true);
 
 require_once __DIR__ . '/../../includes/paths.php';
 require_once $project_root . 'includes/session.php';
+require_once $project_root . 'includes/srp6.php';
 require_once $project_root . 'languages/language.php';
 require_once $project_root . 'includes/config.settings.php';
 
@@ -33,10 +34,16 @@ if ($result->num_rows > 0) {
 }
 $stmt->close();
 
-if (!in_array($_SESSION['role'], ['admin', 'moderator'])) {
-    header("Location: {$base_path}login");
-    exit;
+if (($_SESSION['role'] ?? '') !== 'admin') {
+    http_response_code(403);
+    exit('Administrator access required.');
 }
+if (!isset($operator_owner_username, $operator_service_username) || !is_string($operator_owner_username) || !is_string($operator_service_username) || trim($operator_owner_username) === '' || trim($operator_service_username) === '') {
+    http_response_code(503);
+    exit('Account protection settings unavailable.');
+}
+$operator_owner_username = strtoupper(trim($operator_owner_username));
+$operator_service_username = strtoupper(trim($operator_service_username));
 
 // Handle search, sort, role filter, ban filter, and gmlevel filter
 $search_username = isset($_GET['search_username']) && $_GET['search_username'] !== '' ? trim($_GET['search_username']) : '';
@@ -63,6 +70,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             $update_message = alert_danger(translate('admin_users_csrf_error', 'CSRF token validation failed.'));
         } else {
             $account_id = (int)$_POST['account_id'];
+            $protected = $auth_db->prepare("SELECT username FROM " . DB_AUTH . ".account WHERE id = ?");
+            $protected->bind_param('i', $account_id);
+            $protected->execute();
+            $target = $protected->get_result()->fetch_assoc();
+            $protected->close();
+            if (!$target || in_array(strtoupper($target['username']), [$operator_owner_username, $operator_service_username], true)) {
+                http_response_code(403);
+                exit('This account cannot be changed here.');
+            }
             $points = (int)$_POST['points'];
             $tokens = (int)$_POST['tokens'];
             $role = in_array($_POST['role'], ['player', 'moderator', 'admin']) ? $_POST['role'] : 'player';
@@ -84,6 +100,44 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                 $update_message = alert_danger(translate('admin_users_update_failed', 'Failed to update user.'));
             }
         }
+    } elseif ($_POST['action'] === 'create_account') {
+        if (!isset($_POST['csrf_token']) || !hash_equals($_SESSION['csrf_token'], $_POST['csrf_token'])) {
+            $update_message = alert_danger('CSRF token validation failed.');
+        } else {
+            $username = strtoupper(trim($_POST['username'] ?? ''));
+            $email = trim($_POST['email'] ?? '');
+            $password = $_POST['password'] ?? '';
+
+            if (!preg_match('/^[A-Z0-9]{3,16}$/', $username)) {
+                $update_message = alert_danger('Username must contain 3-16 letters or numbers.');
+            } elseif (in_array($username, [$operator_owner_username, $operator_service_username], true)) {
+                $update_message = alert_danger('That username is reserved.');
+            } elseif ($email !== '' && !filter_var($email, FILTER_VALIDATE_EMAIL)) {
+                $update_message = alert_danger('Enter a valid email address or leave it empty.');
+            } elseif (strlen($password) < 8 || strlen($password) > 16) {
+                $update_message = alert_danger('Password must contain 8-16 characters.');
+            } else {
+                $check = $auth_db->prepare("SELECT id FROM " . DB_AUTH . ".account WHERE username = ? OR (? <> '' AND email = ?) LIMIT 1");
+                $check->bind_param('sss', $username, $email, $email);
+                $check->execute();
+                $exists = $check->get_result()->num_rows > 0;
+                $check->close();
+
+                if ($exists) {
+                    $update_message = alert_danger('That username or email is already in use.');
+                } else {
+                    $salt = SRP6::GenerateSalt();
+                    $verifier = SRP6::CalculateVerifier($username, $password, $salt);
+                    $create = $auth_db->prepare("INSERT INTO " . DB_AUTH . ".account (username, salt, verifier, email, reg_mail, expansion) VALUES (?, ?, ?, ?, ?, 2)");
+                    $create->bind_param('sssss', $username, $salt, $verifier, $email, $email);
+                    $success = $create->execute();
+                    $create->close();
+                    $update_message = $success
+                        ? alert_success('Account created successfully.')
+                        : alert_danger('Failed to create account.');
+                }
+            }
+        }
     } elseif ($_POST['action'] === 'manage_account') {
         if (!isset($_POST['csrf_token']) || !hash_equals($_SESSION['csrf_token'], $_POST['csrf_token'])) {
             $update_message = alert_danger(translate('admin_users_csrf_error', 'CSRF token validation failed.'));
@@ -92,8 +146,45 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             $ban_action = $_POST['ban_action'] ?? '';
             $gmlevel = isset($_POST['gmlevel']) && in_array($_POST['gmlevel'], ['player', '1', '2', '3']) ? $_POST['gmlevel'] : '';
             $success = true;
-            
-            if ($ban_action === 'ban') {
+
+            $stmt = $auth_db->prepare("SELECT username FROM " . DB_AUTH . ".account WHERE id = ?");
+            $stmt->bind_param('i', $account_id);
+            $stmt->execute();
+            $target_account = $stmt->get_result()->fetch_assoc();
+            $stmt->close();
+
+            if (!$target_account) {
+                $success = false;
+                $update_message = alert_danger('Account not found.');
+            } elseif (strtoupper($target_account['username']) === $operator_service_username) {
+                $success = false;
+                $update_message = alert_danger('The CMS service account cannot be managed here.');
+            } elseif (strtoupper($target_account['username']) === $operator_owner_username && in_array($ban_action, ['ban', 'change_gm_role'], true)) {
+                $success = false;
+                $update_message = alert_danger('The owner account cannot be banned or have its GM access changed.');
+            } elseif ($ban_action === 'update_email') {
+                $email = trim($_POST['new_email'] ?? '');
+                if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
+                    $success = false;
+                    $update_message = alert_danger('Enter a valid email address.');
+                } else {
+                    $stmt = $auth_db->prepare("SELECT id FROM " . DB_AUTH . ".account WHERE email = ? AND id <> ? LIMIT 1");
+                    $stmt->bind_param('si', $email, $account_id);
+                    $stmt->execute();
+                    $email_in_use = $stmt->get_result()->num_rows > 0;
+                    $stmt->close();
+
+                    if ($email_in_use) {
+                        $success = false;
+                        $update_message = alert_danger('That email address is already in use.');
+                    } else {
+                        $stmt = $auth_db->prepare("UPDATE " . DB_AUTH . ".account SET email = ?, reg_mail = ? WHERE id = ?");
+                        $stmt->bind_param('ssi', $email, $email, $account_id);
+                        $success = $stmt->execute();
+                        $stmt->close();
+                    }
+                }
+            } elseif ($ban_action === 'ban') {
                 $ban_reason = trim($_POST['ban_reason']);
                 $ban_duration = $_POST['ban_duration'];
                 $ban_time = time();
@@ -132,6 +223,38 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                     $success = $stmt->execute();
                     $stmt->close();
                 }
+            } elseif ($ban_action === 'reset_password') {
+                $new_password = $_POST['new_password'] ?? '';
+                if (strlen($new_password) < 8 || strlen($new_password) > 16) {
+                    $success = false;
+                    $update_message = alert_danger('New password must contain 8-16 characters.');
+                } else {
+                    try {
+                        if (!$auth_db->begin_transaction()) throw new RuntimeException('Unable to start password transaction.');
+                        $stmt = $auth_db->prepare("SELECT username FROM " . DB_AUTH . ".account WHERE id = ? FOR UPDATE");
+                        $stmt->bind_param('i', $account_id);
+                        $stmt->execute();
+                        $locked = $stmt->get_result()->fetch_assoc();
+                        $stmt->close();
+                        if (!$locked || strtoupper($locked['username']) === $operator_service_username) {
+                            throw new RuntimeException('Account unavailable.');
+                        }
+                        $new_salt = SRP6::GenerateSalt();
+                        $new_verifier = SRP6::CalculateVerifier($locked['username'], $new_password, $new_salt);
+                        $stmt = $auth_db->prepare("UPDATE " . DB_AUTH . ".account SET salt = ?, verifier = ? WHERE id = ?");
+                        $stmt->bind_param('ssi', $new_salt, $new_verifier, $account_id);
+                        if (!$stmt->execute()) throw new RuntimeException('Password update failed.');
+                        $stmt->close();
+                        if (!$auth_db->commit()) throw new RuntimeException('Password transaction failed.');
+                    } catch (Throwable $e) {
+                        $auth_db->rollback();
+                        error_log('Admin password reset failed: ' . $e->getMessage());
+                        $success = false;
+                    }
+                }
+            } else {
+                $success = false;
+                $update_message = alert_danger('Select a valid account action.');
             }
             if ($success && empty($update_message)) {
                 $update_message = alert_success(translate('admin_users_action_success', 'Action completed successfully.'));
@@ -151,9 +274,9 @@ function alert_success($msg) {
 }
 
 // Count total website users
-$count_query = "SELECT COUNT(*) as total FROM " . DB_SITE . ".user_currencies uc JOIN " . DB_AUTH . ".account a ON uc.account_id = a.id WHERE 1=1";
-$params = [];
-$types = '';
+$count_query = "SELECT COUNT(*) as total FROM " . DB_SITE . ".user_currencies uc JOIN " . DB_AUTH . ".account a ON uc.account_id = a.id WHERE a.username <> ?";
+$params = [$operator_service_username];
+$types = 's';
 if ($search_username) {
     $count_query .= " AND uc.username LIKE ?";
     $params[] = "%$search_username%";
@@ -180,9 +303,9 @@ $total_website_pages = ceil($total_website_users / $users_per_page);
 
 // Fetch website users
 $users_query = "SELECT uc.account_id, uc.username, uc.avatar, uc.points, uc.tokens, uc.role, uc.last_updated, a.email
-                FROM " . DB_SITE . ".user_currencies uc JOIN " . DB_AUTH . ".account a ON uc.account_id = a.id WHERE 1=1";
-$params = [];
-$types = '';
+                FROM " . DB_SITE . ".user_currencies uc JOIN " . DB_AUTH . ".account a ON uc.account_id = a.id WHERE a.username <> ?";
+$params = [$operator_service_username];
+$types = 's';
 if ($search_username) {
     $users_query .= " AND uc.username LIKE ?";
     $params[] = "%$search_username%";
@@ -211,9 +334,9 @@ $users_result = $stmt->get_result();
 $stmt->close();
 
 // Count total in-game accounts
-$count_query = "SELECT COUNT(*) as total FROM " . DB_AUTH . ".account a LEFT JOIN " . DB_AUTH . ".account_access aa ON a.id = aa.id WHERE 1=1";
-$params = [];
-$types = '';
+$count_query = "SELECT COUNT(*) as total FROM " . DB_AUTH . ".account a LEFT JOIN " . DB_AUTH . ".account_access aa ON a.id = aa.id WHERE a.username <> ?";
+$params = [$operator_service_username];
+$types = 's';
 if ($search_username) {
     $count_query .= " AND a.username LIKE ?";
     $params[] = "%$search_username%";
@@ -249,9 +372,9 @@ $total_ingame_pages = ceil($total_ingame_accounts / $users_per_page);
 $accounts_query = "SELECT a.id, a.username, a.email, a.joindate, a.last_login, a.online, aa.gmlevel
                   FROM " . DB_AUTH . ".account a
                   LEFT JOIN " . DB_AUTH . ".account_access aa ON a.id = aa.id
-                  WHERE 1=1";
-$params = [];
-$types = '';
+                  WHERE a.username <> ?";
+$params = [$operator_service_username];
+$types = 's';
 if ($search_username) {
     $accounts_query .= " AND a.username LIKE ?";
     $params[] = "%$search_username%";
@@ -662,6 +785,23 @@ ob_start();
                     
                     <?php echo $update_message; ?>
 
+                    <!-- Native SahtoutCMS owner controls for creating playable accounts. -->
+                    <div class="panel p-4 md:p-6 lg:p-8">
+                        <h2 class="section-title text-lg md:text-xl mb-4 flex items-center gap-3">
+                            <i class="fas fa-user-plus text-[#f2cf5b]"></i>Create Player Account
+                        </h2>
+                        <form method="POST" action="<?php echo $base_path; ?>admin/users" autocomplete="off">
+                            <input type="hidden" name="action" value="create_account">
+                            <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars($_SESSION['csrf_token']); ?>">
+                            <div class="grid grid-cols-1 md:grid-cols-4 gap-3 md:gap-4">
+                                <input type="text" name="username" class="input-dark" required minlength="3" maxlength="16" pattern="[A-Za-z0-9]+" placeholder="Username">
+                                <input type="email" name="email" class="input-dark" placeholder="Email (optional)">
+                                <input type="password" name="password" class="input-dark" required minlength="8" maxlength="16" placeholder="Initial password (8-16 characters)">
+                                <button type="submit" class="btn-gold justify-center"><i class="fas fa-user-plus"></i>Create Player Account</button>
+                            </div>
+                        </form>
+                    </div>
+
                     <!-- Search Form -->
                     <div class="panel p-4 md:p-6 lg:p-8">
                         <form method="GET" action="<?php echo $base_path; ?>admin/users" id="searchForm">
@@ -987,12 +1127,30 @@ ob_start();
                         <div class="mb-4">
                             <label class="block text-sm font-semibold text-[#f2cf5b] mb-2 font-['Cinzel'] tracking-wide"><?php echo translate('admin_users_label_action', 'Action'); ?></label>
                             <select name="ban_action" class="input-dark ban-action-select" data-account-id="<?php echo $account['id']; ?>">
-                                <option value="change_gm_role"><?php echo translate('admin_users_action_change_gm_role', 'Change GM Role'); ?></option>
-                                <option value="ban"><?php echo translate('admin_users_action_ban', 'Ban Account'); ?></option>
+                                <option value="update_email">Update Email</option>
+                                <option value="reset_password">Reset Password</option>
+                                <?php if ($account['username'] !== $operator_owner_username): ?>
+                                    <option value="change_gm_role"><?php echo translate('admin_users_action_change_gm_role', 'Change GM Role'); ?></option>
+                                    <option value="ban"><?php echo translate('admin_users_action_ban', 'Ban Account'); ?></option>
+                                <?php endif; ?>
                                 <?php if (!empty($account['banInfo'])): ?>
                                     <option value="unban"><?php echo translate('admin_users_action_unban', 'Unban Account'); ?></option>
                                 <?php endif; ?>
                             </select>
+                        </div>
+
+                        <div class="email-fields-<?php echo $account['id']; ?>">
+                            <div class="mb-4">
+                                <label class="block text-sm font-semibold text-[#f2cf5b] mb-2 font-['Cinzel'] tracking-wide">Email Address</label>
+                                <input type="email" name="new_email" class="input-dark" value="<?php echo htmlspecialchars($account['email'] ?? ''); ?>" placeholder="player@example.test">
+                            </div>
+                        </div>
+
+                        <div class="password-fields-<?php echo $account['id']; ?>" >
+                            <div class="mb-4">
+                                <label class="block text-sm font-semibold text-[#f2cf5b] mb-2 font-['Cinzel'] tracking-wide">New Password</label>
+                                <input type="password" name="new_password" class="input-dark" minlength="8" maxlength="16" placeholder="8-16 characters">
+                            </div>
                         </div>
                         
                         <div class="ban-fields-<?php echo $account['id']; ?>" style="display:none;">

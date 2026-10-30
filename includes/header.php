@@ -22,16 +22,6 @@ require_once $project_root . 'includes/config.settings.php'; // load logo + soci
 // Include language detection
 require_once $project_root . 'languages/language.php';
 
-// Check if session is started; warn in source code if not
-if (session_status() !== PHP_SESSION_ACTIVE) {
-    echo "<!-- WARNING: Session not started. Ensure session_start() is called in the parent script. -->\n";
-}
-
-// Debug: Check if session variable is set (visible in source code only)
-if (!isset($_SESSION['user_id'])) {
-    echo "<!-- DEBUG: No user session detected. Ensure login script sets \$_SESSION['user_id']. -->\n";
-}
-
 // Ensure $page_class is defined in the including page; default to 'default'
 $page_class = isset($page_class) ? $page_class : 'default';
 
@@ -698,22 +688,6 @@ $esc_logo = htmlspecialchars($site_logo ?? '', ENT_QUOTES, 'UTF-8');
                     <?php echo translate('nav_home', 'Home'); ?>
                 </a>
 
-                <a href="<?php echo $esc_base; ?>how_to_play" class="nav-link <?php echo $page_class === 'how_to_play' ? 'active' : ''; ?>">
-                    <?php echo translate('nav_how_to_play', 'How to Play'); ?>
-                </a>
-
-                <a href="<?php echo $esc_base; ?>news" class="nav-link <?php echo $page_class === 'news' ? 'active' : ''; ?>">
-                    <?php echo translate('nav_news', 'News'); ?>
-                </a>
-
-                <a href="<?php echo $esc_base; ?>armory/solo_pvp" class="nav-link <?php echo strpos($page_class, 'armory') !== false ? 'active' : ''; ?>">
-                    <?php echo translate('nav_armory', 'Armory'); ?>
-                </a>
-
-                <a href="<?php echo $esc_base; ?>shop" class="nav-link <?php echo $page_class === 'shop' ? 'active' : ''; ?>">
-                    <?php echo translate('nav_shop', 'Shop'); ?>
-                </a>
-
                 <?php if (empty($_SESSION['user_id'])): ?>
                     <a href="<?php echo $esc_base; ?>register" class="nav-link <?php echo $page_class === 'register' ? 'active' : ''; ?>">
                         <?php echo translate('nav_register', 'Register'); ?>
@@ -779,11 +753,6 @@ $esc_logo = htmlspecialchars($site_logo ?? '', ENT_QUOTES, 'UTF-8');
                                 <?php endif; ?>
 
                                 <div class="dropdown-divider"></div>
-
-                                <a href="<?php echo $esc_base; ?>vote" class="dropdown-item force-wrap">
-                                    <i class="fas fa-vote-yea w-4 text-center text-[#4ade80]"></i>
-                                    <?php echo translate('vote', 'Vote'); ?>
-                                </a>
 
                                 <div class="dropdown-divider"></div>
 

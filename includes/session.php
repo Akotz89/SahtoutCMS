@@ -25,6 +25,8 @@ session_start();
 require_once __DIR__ . '/paths.php';
 // Include database configuration
 require_once $project_root . 'includes/config.php';
+$operator_owner_username = $operator_owner_username ?? (getenv('CMS_OWNER_USERNAME') ?: '');
+$operator_service_username = $operator_service_username ?? (getenv('CMS_SERVICE_USERNAME') ?: '');
 
 // Initialize debug errors
 $_SESSION['debug_errors'] = $_SESSION['debug_errors'] ?? [];
@@ -42,7 +44,7 @@ if (empty($_SESSION['csrf_token'])) {
 
 // Define protected and admin pages
 $protected_pages = ['account.php', 'buy_item.php'];
-$admin_pages = ['dashboard.php', 'users.php', 'anews.php','characters.php','ashop.php','gm_cmd.php', 'logout.php','save_general.php'];
+$admin_pages = ['resources.php', 'dashboard.php', 'users.php', 'anews.php','characters.php','ashop.php','gm_cmd.php', 'logout.php','save_general.php'];
 $current_page = basename($_SERVER['PHP_SELF']);
 
 // Validate session for protected and admin pages
@@ -106,7 +108,15 @@ if (in_array($current_page, $public_pages) && !empty($_SESSION['user_id']) && !e
     $stmt->execute();
     $result = $stmt->get_result();
     if ($result->num_rows === 1) {
-        header('Location: ' . $base_path . 'account');
+        $stmt->close();
+        $role_stmt = $site_db->prepare("SELECT role FROM user_currencies WHERE account_id = ? LIMIT 1");
+        $role_stmt->bind_param('i', $_SESSION['user_id']);
+        $role_stmt->execute();
+        $role_result = $role_stmt->get_result();
+        $_SESSION['role'] = $role_result->num_rows === 1 ? $role_result->fetch_assoc()['role'] : 'player';
+        $role_stmt->close();
+        $destination = $_SESSION['role'] === 'admin' ? 'admin/users' : 'account';
+        header('Location: ' . $base_path . $destination);
         exit();
     }
     $_SESSION['debug_errors'] = ["Invalid session data on public page."];

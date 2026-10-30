@@ -692,3 +692,22 @@ Made with ❤️ by **Blodyiheb**
 ⭐ If you find it useful, consider giving the repository a star!
 
 </div>
+
+### Playerbots LAN account console
+
+This fork keeps account registration and management while disabling community and
+monetization routes. Set `CMS_OWNER_USERNAME` and `CMS_SERVICE_USERNAME` in the
+server's private PHP environment, or define `$operator_owner_username` and
+`$operator_service_username` in the server-local `includes/config.php`. Account
+management and username changes fail closed if either identity is missing. PHP-FPM
+must pass these settings to PHP. Keep database credentials and real account names
+out of Git.
+
+When SMTP activation is enabled, registration requires a valid email address;
+otherwise an email address may be omitted. Username changes require auth and site
+schemas on the same MySQL server, transactional account tables, and the existing
+auth connection's site-table access. Verify those grants and the site transaction
+before deployment; missing prerequisites cause the change to fail.
+
+Offline checks: `php tests/account_username_test.php`, `php tests/admin_guard_test.php`,
+and `php tests/register_test.php`. These do not exercise the deployed service.
