@@ -1,7 +1,7 @@
 <?php
 if (!defined('ALLOWED_ACCESS')) exit('Direct access not allowed.');
 
-function changeAccountUsername($db, string $siteName, int $id, string $oldName, string $newName, string $password, array $reserved): void
+function changeAccountUsername($db, string $siteName, int $id, string $oldName, string $newName, string $password, array $reserved): array
 {
     if (count($reserved) !== 2 || !is_string($reserved[0]) || !is_string($reserved[1]) || trim($reserved[0]) === '' || trim($reserved[1]) === '') {
         throw new RuntimeException('Account rename is not configured.');
@@ -55,6 +55,7 @@ function changeAccountUsername($db, string $siteName, int $id, string $oldName, 
         if (!$stmt->execute()) throw new RuntimeException('Site account update failed.');
         $stmt->close();
         if (!$db->commit()) throw new RuntimeException('Account transaction failed.');
+        return [$salt, $verifier];
     } catch (Throwable $e) {
         $db->rollback();
         throw $e;

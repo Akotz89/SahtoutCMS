@@ -36,7 +36,7 @@ function attempt($db, $old='OLDNAME', $new='NEWNAME', $password='correct', $rese
     catch (Throwable $e) { return false; }
 }
 function check($condition, $message) { if (!$condition) throw new RuntimeException($message); }
-$db = new FakeDb(); check(attempt($db) && $db->committed && !$db->rolledBack, 'valid rename');
+$db = new FakeDb(); check(changeAccountUsername($db, 'site', 5, 'OLDNAME', 'NEWNAME', 'correct', ['OWNER', 'SERVICE']) === ['new salt', 'new verifier'] && $db->committed && !$db->rolledBack, 'valid rename');
 $db = new FakeDb(); check(!attempt($db, reserved:['OWNER', null]) && !$db->begun, 'missing reserved account');
 $db = new FakeDb(); check(!attempt($db, new:'OWNER') && !$db->begun, 'reserved name');
 $db = new FakeDb(); check(!attempt($db, schema:'bad-name') && !$db->begun, 'invalid schema');

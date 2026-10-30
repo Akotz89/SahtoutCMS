@@ -15,6 +15,7 @@ jobs:
         run: |
           php tests/account_username_test.php
           php tests/session_credentials_test.php
+          php tests/self_service_session_test.php
           php tests/admin_guard_test.php
           php tests/register_test.php
       - name: Check Apache installer and recovery routes

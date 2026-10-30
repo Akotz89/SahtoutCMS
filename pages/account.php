@@ -144,8 +144,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
             $new_username = strtoupper(trim($_POST['new_username'] ?? ''));
             $old_username = (string) $_SESSION['username'];
-            changeAccountUsername($auth_db, $db_site_name, (int) $_SESSION['user_id'], $old_username, $new_username, (string) ($_POST['current_password'] ?? ''), [$operator_owner_username ?? null, $operator_service_username ?? null]);
+            [$new_salt, $new_verifier] = changeAccountUsername($auth_db, $db_site_name, (int) $_SESSION['user_id'], $old_username, $new_username, (string) ($_POST['current_password'] ?? ''), [$operator_owner_username ?? null, $operator_service_username ?? null]);
             $_SESSION['username'] = $new_username;
+            $_SESSION['credential_fingerprint'] = credentialFingerprint($new_salt, $new_verifier);
             session_regenerate_id(true);
             $_SESSION['last_regeneration'] = time();
             try {
@@ -288,13 +289,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 throw new Exception(translate('error_updating_password', 'Error updating password'));
             }
             $update->close();
+            $_SESSION['credential_fingerprint'] = credentialFingerprint($new_salt, $new_verifier);
+            session_regenerate_id(true);
+            $_SESSION['last_regeneration'] = time();
 
-            // Log action
-            $stmt_log = $site_db->prepare("INSERT INTO website_activity_log (account_id, character_name, action, timestamp) VALUES (?, NULL, ?, UNIX_TIMESTAMP())");
-            $action = translate('action_password_changed', 'Password Changed');
-            $stmt_log->bind_param('is', $_SESSION['user_id'], $action);
-            $stmt_log->execute();
-            $stmt_log->close();
+            try {
+                $stmt_log = $site_db->prepare("INSERT INTO website_activity_log (account_id, character_name, action, timestamp) VALUES (?, NULL, ?, UNIX_TIMESTAMP())");
+                $action = translate('action_password_changed', 'Password Changed');
+                $stmt_log->bind_param('is', $_SESSION['user_id'], $action);
+                $stmt_log->execute();
+                $stmt_log->close();
+            } catch (Throwable $log_error) {
+                error_log('Account password change audit failed: ' . $log_error->getMessage());
+            }
 
             if ($account_email !== '') {
                 sendAccountSecurityEmail($_SESSION['username'], $account_email, 'password_changed');
