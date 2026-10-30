@@ -695,11 +695,16 @@ Made with ❤️ by **Blodyiheb**
 
 ### Playerbots LAN account console
 
-This fork keeps account registration and management while disabling community and
-monetization routes. Set `CMS_OWNER_USERNAME` and `CMS_SERVICE_USERNAME` in the
-server's private PHP environment, or define `$operator_owner_username` and
+This fork adds the realm's account-management controls to upstream. The bundled
+web installer is blocked by the production `.htaccess`; initial setup requires a
+separate, local-only development virtual host configured without that override.
+Remove that virtual host after setup; do not expose it on the served console.
+
+Set `CMS_OWNER_USERNAME` and `CMS_SERVICE_USERNAME` in the server's private PHP
+environment, or define `$operator_owner_username` and
 `$operator_service_username` in the server-local `includes/config.php`. Account
-management, registration and username changes fail closed if either identity is missing. PHP-FPM
+management, registration and username changes fail closed if either identity is
+missing. PHP-FPM
 must pass these settings to PHP. Keep database credentials and real account names
 out of Git.
 

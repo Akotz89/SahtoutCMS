@@ -130,11 +130,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                     $verifier = SRP6::CalculateVerifier($username, $password, $salt);
                     $create = $auth_db->prepare("INSERT INTO " . DB_AUTH . ".account (username, salt, verifier, email, reg_mail, expansion) VALUES (?, ?, ?, ?, ?, 2)");
                     $create->bind_param('sssss', $username, $salt, $verifier, $email, $email);
-                    $success = $create->execute();
-                    $create->close();
-                    $update_message = $success
-                        ? alert_success('Account created successfully.')
-                        : alert_danger('Failed to create account.');
+                    try {
+                        $success = $create->execute();
+                        $update_message = $success
+                            ? alert_success('Account created successfully.')
+                            : alert_danger('Failed to create account.');
+                    } catch (mysqli_sql_exception $e) {
+                        $update_message = $e->getCode() === 1062
+                            ? alert_danger('That username or email is already in use.')
+                            : alert_danger('Failed to create account.');
+                    } finally {
+                        $create->close();
+                    }
                 }
             }
         }

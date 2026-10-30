@@ -775,6 +775,14 @@ include_once $project_root . 'includes/header.php';
                 </div>
 
 
+                <div class="text-center text-gray-400 text-sm">
+                    <a
+                        href="<?php echo htmlspecialchars($base_path . 'forgot_password'); ?>"
+                        class="text-[#f2cf5b] hover:text-yellow-300 hover:underline transition-colors">
+                        <i class="fas fa-key mr-1"></i>
+                        <?php echo translate('forgot_password_link', 'Forgot Password?'); ?>
+                    </a>
+                </div>
             </form>
         </div>
     </div>

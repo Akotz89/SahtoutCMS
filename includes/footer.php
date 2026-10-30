@@ -148,6 +148,9 @@ if (file_exists($project_root . 'includes/config.settings.php')) {
             <div class="flex flex-col items-center gap-4">
                 <div class="flex flex-wrap justify-center gap-x-6 gap-y-2">
                     <a href="<?php echo $base_path; ?>" class="footer-nav-link"><?php echo translate('nav_home', 'Home'); ?></a>
+                    <a href="<?php echo $base_path; ?>news" class="footer-nav-link"><?php echo translate('nav_news', 'News'); ?></a>
+                    <a href="<?php echo $base_path; ?>shop" class="footer-nav-link"><?php echo translate('nav_shop', 'Shop'); ?></a>
+                    <a href="<?php echo $base_path; ?>armory/solo_pvp" class="footer-nav-link"><?php echo translate('nav_armory', 'Armory'); ?></a>
                 </div>
                 <div class="h-px w-48 bg-gradient-to-r from-transparent via-[#c9a227] to-transparent opacity-50"></div>
                 <p class="text-gray-500 text-xs tracking-wider uppercase font-semibold">

@@ -1199,6 +1199,9 @@ include_once $project_root . 'includes/header.php';
                 <button type="button" class="nav-tab-gaming px-6 py-2.5 font-semibold text-sm rounded-lg transition-all duration-300 bg-[rgba(10,14,22,0.6)] border border-[rgba(201,162,39,0.2)] text-gray-300 hover:border-[#f2cf5b]/50 hover:text-white flex items-center justify-center gap-2 cursor-pointer" data-tab="security">
                     <i class="fas fa-shield-alt"></i> <?php echo translate('tab_security', 'Security'); ?>
                 </button>
+                <a href="<?php echo $base_path; ?>vote" class="nav-tab-gaming ml-auto px-6 py-2.5 font-semibold text-sm rounded-lg transition-all duration-300 bg-[rgba(10,14,22,0.6)] border border-[rgba(201,162,39,0.2)] text-gray-300 hover:border-[#f2cf5b]/50 hover:text-white flex items-center justify-center gap-2 cursor-pointer">
+                    <i class="fas fa-vote-yea text-[#f2cf5b]"></i> <?php echo translate('tab_vote', 'Vote'); ?>
+                </a>
             </div>
 
             <!-- Tab Content -->
@@ -1386,6 +1389,9 @@ include_once $project_root . 'includes/header.php';
                                             <span class="text-xl md:text-2xl font-black text-white tracking-tight" style="font-family:'Cinzel',serif;">
                                                 <?php echo number_format((int)($currencies['points'] ?? 0)); ?>
                                             </span>
+                                            <a href="<?php echo $base_path; ?>vote" class="text-[10px] text-yellow-400 hover:text-white font-semibold flex items-center gap-0.5 transition-colors">
+                                                <i class="fas fa-vote-yea text-[9px]"></i> <?php echo translate('tab_vote', 'Vote'); ?>
+                                            </a>
                                         </div>
                                         <div class="stat-hud-label truncate">
                                             <?php echo translate('label_points', 'Points'); ?>
@@ -1403,6 +1409,9 @@ include_once $project_root . 'includes/header.php';
                                             <span class="text-xl md:text-2xl font-black text-white tracking-tight" style="font-family:'Cinzel',serif;">
                                                 <?php echo number_format((int)($currencies['tokens'] ?? 0)); ?>
                                             </span>
+                                            <a href="<?php echo $base_path; ?>shop" class="text-[10px] text-purple-400 hover:text-white font-semibold flex items-center gap-0.5 transition-colors">
+                                                <i class="fas fa-store text-[9px]"></i> <?php echo translate('shop_title', 'Shop'); ?>
+                                            </a>
                                         </div>
                                         <div class="stat-hud-label truncate">
                                             <?php echo translate('label_tokens', 'Tokens'); ?>

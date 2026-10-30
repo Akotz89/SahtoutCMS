@@ -275,6 +275,46 @@ if (strpos($current_path, 'admin/dashboard') !== false) {
                 </a>
             </li>
 
+            <li>
+                <a class="group flex items-center gap-3 px-3 py-2.5 text-[0.85rem] font-semibold tracking-wide text-gray-400 bg-black/20 border-l-3 border-transparent hover:text-gray-200 hover:bg-[rgba(201,162,39,.08)] hover:border-[rgba(201,162,39,.4)] hover:translate-x-1 transition-all duration-200 relative clip-gaming <?php echo ($page_class === 'anews' || $active_page === 'anews') ? 'active-link' : ''; ?>"
+                   href="<?php echo $base_path; ?>admin/anews">
+                    <i class="fas fa-newspaper w-5 text-center text-[0.9rem] group-hover:scale-110 group-hover:text-[#f2cf5b] transition-all duration-300"></i>
+                    <?php echo translate('admin_news', 'News Management'); ?>
+                </a>
+            </li>
+
+            <li>
+                <a class="group flex items-center gap-3 px-3 py-2.5 text-[0.85rem] font-semibold tracking-wide text-gray-400 bg-black/20 border-l-3 border-transparent hover:text-gray-200 hover:bg-[rgba(201,162,39,.08)] hover:border-[rgba(201,162,39,.4)] hover:translate-x-1 transition-all duration-200 relative clip-gaming <?php echo ($page_class === 'characters' || $active_page === 'characters') ? 'active-link' : ''; ?>"
+                   href="<?php echo $base_path; ?>admin/characters">
+                    <i class="fas fa-user-edit w-5 text-center text-[0.9rem] group-hover:scale-110 group-hover:text-[#f2cf5b] transition-all duration-300"></i>
+                    <?php echo translate('admin_characters', 'Character Management'); ?>
+                </a>
+            </li>
+
+            <li>
+                <a class="group flex items-center gap-3 px-3 py-2.5 text-[0.85rem] font-semibold tracking-wide text-gray-400 bg-black/20 border-l-3 border-transparent hover:text-gray-200 hover:bg-[rgba(201,162,39,.08)] hover:border-[rgba(201,162,39,.4)] hover:translate-x-1 transition-all duration-200 relative clip-gaming <?php echo ($page_class === 'shop' || $active_page === 'shop') ? 'active-link' : ''; ?>"
+                   href="<?php echo $base_path; ?>admin/ashop">
+                    <i class="fas fa-shopping-cart w-5 text-center text-[0.9rem] group-hover:scale-110 group-hover:text-[#f2cf5b] transition-all duration-300"></i>
+                    <?php echo translate('admin_shop', 'Shop Management'); ?>
+                </a>
+            </li>
+
+            <li>
+                <a class="group flex items-center gap-3 px-3 py-2.5 text-[0.85rem] font-semibold tracking-wide text-gray-400 bg-black/20 border-l-3 border-transparent hover:text-gray-200 hover:bg-[rgba(201,162,39,.08)] hover:border-[rgba(201,162,39,.4)] hover:translate-x-1 transition-all duration-200 relative clip-gaming <?php echo ($page_class === 'gm_cmd' || $active_page === 'gm_cmd') ? 'active-link' : ''; ?>"
+                   href="<?php echo $base_path; ?>admin/gm_cmd">
+                    <i class="fas fa-terminal w-5 text-center text-[0.9rem] group-hover:scale-110 group-hover:text-[#f2cf5b] transition-all duration-300"></i>
+                    <?php echo translate('admin_gm_commands', 'GM Commands'); ?>
+                </a>
+            </li>
+
+            <li>
+                <a class="group flex items-center gap-3 px-3 py-2.5 text-[0.85rem] font-semibold tracking-wide text-gray-400 bg-black/20 border-l-3 border-transparent hover:text-gray-200 hover:bg-[rgba(201,162,39,.08)] hover:border-[rgba(201,162,39,.4)] hover:translate-x-1 transition-all duration-200 relative clip-gaming <?php echo ($page_class === 'settings' || $active_page === 'settings') ? 'active-link' : ''; ?>"
+                   href="<?php echo $base_path; ?>admin/settings/general">
+                    <i class="fas fa-cogs w-5 text-center text-[0.9rem] group-hover:scale-110 group-hover:text-[#f2cf5b] transition-all duration-300"></i>
+                    <?php echo translate('admin_settings', 'Settings'); ?>
+                </a>
+            </li>
+
             <!-- Divider -->
             <li class="my-3 px-2">
                 <div class="relative flex items-center">
