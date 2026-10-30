@@ -117,11 +117,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 
     // Validation
-    if (strlen($username) < 3 || strlen($username) > 17) {
-        $errors[] = translate('error_username_invalid_length', 'Username must be between 3 and 17 characters.');
+    if (strlen($username) < 3 || strlen($username) > 16) {
+        $errors[] = translate('error_username_invalid_length', 'Username must be between 3 and 16 characters.');
     }
     if (!preg_match('/^[a-zA-Z0-9]+$/', $username)) {
         $errors[] = translate('error_username_invalid_chars', 'Username can only contain letters and numbers.');
+    }
+    if (!is_string($operator_owner_username ?? null) || !is_string($operator_service_username ?? null) || trim($operator_owner_username) === '' || trim($operator_service_username) === '') {
+        $errors[] = 'Registration is temporarily unavailable.';
+    } elseif (in_array(strtoupper($username), [strtoupper(trim($operator_owner_username)), strtoupper(trim($operator_service_username))], true)) {
+        $errors[] = 'That username is reserved.';
     }
     if (($email === '' && $is_smtp_enabled) || ($email !== '' && !filter_var($email, FILTER_VALIDATE_EMAIL))) {
         $errors[] = translate('error_email_invalid', 'Invalid email address.');
@@ -464,7 +469,7 @@ include_once $project_root . 'includes/header.php';
                 <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars($_SESSION['csrf_token']); ?>">
                 <div>
                     <i class="fas fa-user text-[rgba(201,162,39,0.4)] absolute mt-3.5 ml-3"></i>
-                    <input type="text" name="username" minlength="3" maxlength="17" placeholder="<?php echo translate('username_placeholder', 'Username'); ?>" required value="<?php echo htmlspecialchars($username); ?>" class="input-register w-full pl-10 pr-4 py-3 text-base">
+                    <input type="text" name="username" minlength="3" maxlength="16" placeholder="<?php echo translate('username_placeholder', 'Username'); ?>" required value="<?php echo htmlspecialchars($username); ?>" class="input-register w-full pl-10 pr-4 py-3 text-base">
                 </div>
                 
                 <div>

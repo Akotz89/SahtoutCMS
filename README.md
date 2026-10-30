@@ -699,7 +699,7 @@ This fork keeps account registration and management while disabling community an
 monetization routes. Set `CMS_OWNER_USERNAME` and `CMS_SERVICE_USERNAME` in the
 server's private PHP environment, or define `$operator_owner_username` and
 `$operator_service_username` in the server-local `includes/config.php`. Account
-management and username changes fail closed if either identity is missing. PHP-FPM
+management, registration and username changes fail closed if either identity is missing. PHP-FPM
 must pass these settings to PHP. Keep database credentials and real account names
 out of Git.
 
