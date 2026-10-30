@@ -11,7 +11,8 @@ $_SERVER['REQUEST_METHOD'] = 'POST';
 $_POST = ['csrf_token' => getenv('BAD_CSRF') ? 'wrong' : 'test-csrf', 'username' => getenv('USERNAME') ?: 'PLAYER1', 'password' => getenv('SHORT') ? 'short' : 'password1', 'confirm_password' => getenv('SHORT') ? 'short' : 'password1', 'email' => getenv('EMAIL') ?: ''];
 $operator_owner_username = getenv('MISSING_SETTINGS') ? '' : 'OWNER'; $operator_service_username = 'SERVICE';
 class Result { public $num_rows = 0; }
-class Statement { public function __construct(private string $sql) {} public function bind_param($types, &...$values) {} public function execute() { if (str_starts_with($this->sql, 'INSERT')) $GLOBALS['inserted']++; return true; } public function get_result() { return new Result; } public function close() {} }
+if (!class_exists('mysqli_sql_exception')) { class mysqli_sql_exception extends RuntimeException {} }
+class Statement { public function __construct(private string $sql) {} public function bind_param($types, &...$values) {} public function execute() { if (str_starts_with($this->sql, 'INSERT')) { if (getenv('INSERT_ERROR')) throw new mysqli_sql_exception('fixture', (int) getenv('INSERT_ERROR')); $GLOBALS['inserted']++; } return true; } public function get_result() { return new Result; } public function close() {} }
 class Database { public $connect_error = false; public function prepare($sql) { return new Statement($sql); } }
 $inserted = 0; $site_db = new Database; $auth_db = new Database;
 STUB);
@@ -31,6 +32,8 @@ $cases = [
     ['invalid csrf rejected', ['BAD_CSRF' => '1'], false],
     ['reserved name rejected', ['USERNAME' => 'owner'], false],
     ['missing protections fail closed', ['MISSING_SETTINGS' => '1'], false],
+    ['duplicate at insert handled', ['INSERT_ERROR' => '1062'], false],
+    ['other insert error handled', ['INSERT_ERROR' => '1142'], false],
 ];
 foreach ($cases as [$label, $env, $shouldInsert]) {
     $process = proc_open([PHP_BINARY, "$root/run.php"], [1 => ['pipe', 'w'], 2 => ['pipe', 'w']], $pipes, null, $env);
@@ -40,6 +43,8 @@ foreach ($cases as [$label, $env, $shouldInsert]) {
     if ($status !== 0 || !is_array($result) || ($result['inserted'] === 1) !== $shouldInsert || (!$shouldInsert && !$result['errors'])) {
         throw new RuntimeException("$label failed: $err $out");
     }
+    if ($label === 'duplicate at insert handled' && !in_array('Username or email already exists.', $result['errors'], true)) throw new RuntimeException("$label failed");
+    if ($label === 'other insert error handled' && !in_array('Database error. Please try again later.', $result['errors'], true)) throw new RuntimeException("$label failed");
 }
 foreach (glob("$root/includes/*") as $path) unlink($path);
 unlink("$root/languages/language.php"); unlink("$root/pages/register.php"); unlink("$root/run.php");

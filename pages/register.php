@@ -239,18 +239,29 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         } else {
             // SMTP disabled: Directly create account in acore_auth.account
             $upper_username = strtoupper($account['username']);
-            $stmt_insert = $auth_db->prepare("INSERT INTO account (username, salt, verifier, email, reg_mail, expansion) VALUES (?, ?, ?, ?, ?, 2)");
-            if (!$stmt_insert) {
-                error_log("Register: Insert account prepare failed: " . $auth_db->error);
-                $errors[] = translate('error_database', 'Database error. Please try again later.');
-            } else {
-                $stmt_insert->bind_param('sssss', $upper_username, $account['salt'], $account['verifier'], $account['email'], $account['email']);
-                if ($stmt_insert->execute()) {
-                    $success = translate('success_account_created_no_email', 'Account created successfully! You can now log in.');
+            $stmt_insert = null;
+            try {
+                $stmt_insert = $auth_db->prepare("INSERT INTO account (username, salt, verifier, email, reg_mail, expansion) VALUES (?, ?, ?, ?, ?, 2)");
+                if (!$stmt_insert) {
+                    error_log("Register: Insert account prepare failed: " . $auth_db->error);
+                    $errors[] = translate('error_database', 'Database error. Please try again later.');
                 } else {
-                    $errors[] = translate('error_registration_failed', 'Failed to create account.');
+                    $stmt_insert->bind_param('sssss', $upper_username, $account['salt'], $account['verifier'], $account['email'], $account['email']);
+                    if ($stmt_insert->execute()) {
+                        $success = translate('success_account_created_no_email', 'Account created successfully! You can now log in.');
+                    } else {
+                        $errors[] = translate('error_registration_failed', 'Failed to create account.');
+                    }
                 }
-                $stmt_insert->close();
+            } catch (mysqli_sql_exception $e) {
+                if ($e->getCode() === 1062) {
+                    $errors[] = translate('error_account_exists', 'Username or email already exists.');
+                } else {
+                    error_log('Register: account insert failed');
+                    $errors[] = translate('error_database', 'Database error. Please try again later.');
+                }
+            } finally {
+                if ($stmt_insert) $stmt_insert->close();
             }
         }
     }
