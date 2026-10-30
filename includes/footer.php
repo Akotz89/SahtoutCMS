@@ -57,36 +57,6 @@ if (file_exists($project_root . 'includes/config.settings.php')) {
         text-shadow: 0 0 8px rgba(242,207,82,.4);
     }
 
-    /* ============ SOCIAL ICONS (SMALLER) ============ */
-    .social-icon-btn {
-        display: inline-flex;
-        align-items: center;
-        justify-content: center;
-        width: 36px; height: 36px;
-        background: rgba(0,0,0,.4);
-        border: 1px solid rgba(201,162,39,.2);
-        color: #d8d8d8;
-        font-size: 0.95rem;
-        clip-path: polygon(6px 0, 100% 0, 100% calc(100% - 6px), calc(100% - 6px) 100%, 0 100%, 0 6px);
-        transition: all 0.3s ease;
-        text-decoration: none;
-    }
-    .social-icon-btn:hover {
-        background: linear-gradient(180deg, rgba(201,162,39,.25), rgba(201,162,39,.08));
-        border-color: var(--gold-primary);
-        color: var(--gold-primary);
-        text-shadow: 0 0 10px rgba(242,207,82,.6);
-        transform: translateY(-4px);
-        box-shadow: 0 8px 16px rgba(0,0,0,.5);
-    }
-    .social-icon-btn img {
-        transition: all 0.3s ease;
-    }
-    .social-icon-btn:hover img {
-        /* Gold tint for the Kick image on hover */
-        filter: brightness(0) invert(78%) sepia(58%) saturate(452%) hue-rotate(10deg) brightness(95%) contrast(88%);
-    }
-
     /* ============ BACK TO TOP BUTTON (LEFT SIDE) ============ */
     #backToTop {
         position: fixed;
@@ -130,65 +100,16 @@ if (file_exists($project_root . 'includes/config.settings.php')) {
 
 <footer class="wow-footer">
     <div class="max-w-[1600px] mx-auto px-4 md:px-8 py-8 md:py-12">
-        <div class="grid grid-cols-1 md:grid-cols-3 gap-8 items-center text-center md:text-left">
-            
-            <!-- Logo & Tagline -->
-            <div class="flex flex-col items-center md:items-start gap-4">
-                <a href="<?php echo htmlspecialchars($base_path); ?>" class="transition-transform duration-300 hover:scale-105 hover:drop-shadow-[0_0_12px_rgba(242,207,82,0.5)]">
-                    <img src="<?php echo htmlspecialchars($base_path . ltrim($site_logo ?? 'img/logo.png', '/')); ?>"
-                         alt="<?php echo htmlspecialchars(translate('footer_logo_alt', 'Server Logo')); ?>"
-                         class="h-16 md:h-20 rounded">
-                </a>
-                <p class="text-gray-400 text-sm max-w-xs leading-relaxed">
-                    <?php echo translate('footer_tagline', 'Join our epic World of Warcraft server adventure today!'); ?>
-                </p>
-            </div>
-
-            <!-- Quick Links / Copyright -->
-            <div class="flex flex-col items-center gap-4">
-                <div class="flex flex-wrap justify-center gap-x-6 gap-y-2">
-                    <a href="<?php echo $base_path; ?>" class="footer-nav-link"><?php echo translate('nav_home', 'Home'); ?></a>
-                    <a href="<?php echo $base_path; ?>news" class="footer-nav-link"><?php echo translate('nav_news', 'News'); ?></a>
-                    <a href="<?php echo $base_path; ?>shop" class="footer-nav-link"><?php echo translate('nav_shop', 'Shop'); ?></a>
-                    <a href="<?php echo $base_path; ?>armory/solo_pvp" class="footer-nav-link"><?php echo translate('nav_armory', 'Armory'); ?></a>
-                </div>
-                <div class="h-px w-48 bg-gradient-to-r from-transparent via-[#c9a227] to-transparent opacity-50"></div>
-                <p class="text-gray-500 text-xs tracking-wider uppercase font-semibold">
-                    &copy; <?php echo date('Y') . " " . $site_title_name; ?>. <?php echo translate('footer_rights', 'All rights reserved.'); ?>
-                </p>
-            </div>
-
-            <!-- Socials -->
-            <div class="flex flex-col items-center md:items-end gap-4">
-                <h4 class="text-[#f2cf5b] font-bold text-sm uppercase tracking-widest" style="font-family:'Cinzel',serif; text-shadow: 0 0 8px rgba(242,207,82,.3);">
-                    <?php echo translate('footer_follow_us', 'Follow Us'); ?>
-                </h4>
-                <div class="flex flex-wrap justify-center md:justify-end gap-3">
-                    <?php
-                    $socials = [
-                        'facebook'  => ['icon' => 'fab fa-facebook-f', 'alt' => 'Facebook'],
-                        'twitter'   => ['icon' => 'fab fa-x-twitter', 'alt' => 'Twitter (X)'],
-                        'tiktok'    => ['icon' => 'fab fa-tiktok', 'alt' => 'TikTok'],
-                        'youtube'   => ['icon' => 'fab fa-youtube', 'alt' => 'YouTube'],
-                        'discord'   => ['icon' => 'fab fa-discord', 'alt' => 'Discord'],
-                        'twitch'    => ['icon' => 'fab fa-twitch', 'alt' => 'Twitch'],
-                        'instagram' => ['icon' => 'fab fa-instagram', 'alt' => 'Instagram'],
-                        'github'    => ['icon' => 'fab fa-github', 'alt' => 'GitHub'],
-                        'kick'      => ['icon' => 'fab fa-kickstarter', 'alt' => 'Kick'],
-                        'linkedin'  => ['icon' => 'fab fa-linkedin-in', 'alt' => 'LinkedIn']
-                    ];
-
-                    foreach ($socials as $key => $data) {
-                        if (!empty($social_links[$key])) {
-                            echo '<a href="' . htmlspecialchars($social_links[$key]) . '" target="_blank" aria-label="' . htmlspecialchars(translate($key . '_alt', $data['alt'])) . '" class="social-icon-btn">';
-                            echo '<i class="' . $data['icon'] . '"></i>';
-                            echo '</a>';
-                        }
-                    }
-
-                    ?>
+        <div class="flex flex-col md:flex-row items-center justify-between gap-4 text-center md:text-left">
+            <div class="flex items-center gap-3">
+                <img src="<?php echo htmlspecialchars($base_path . ltrim($site_logo ?? 'img/logo.png', '/')); ?>"
+                     alt="Playerbots" class="h-12 rounded">
+                <div>
+                    <p class="text-[#f2cf5b] font-bold">Playerbots Account Management</p>
+                    <p class="text-gray-500 text-xs">Private LAN operator console</p>
                 </div>
             </div>
+            <a href="<?php echo $base_path; ?>admin/users" class="footer-nav-link">User Management</a>
         </div>
     </div>
 </footer>

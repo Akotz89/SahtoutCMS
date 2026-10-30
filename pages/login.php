@@ -12,7 +12,8 @@ define('LOCKOUT_DURATION', 900);
 define('ATTEMPT_WINDOW', 3600);
 
 if (isset($_SESSION['user_id'])) {
-    header("Location: {$base_path}account");
+    $destination = in_array($_SESSION['role'] ?? 'player', ['admin', 'moderator'], true) ? 'admin/users' : 'account';
+    header("Location: {$base_path}{$destination}");
     exit();
 }
 
@@ -504,7 +505,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                     $username
                                 );
 
-                                header("Location: {$base_path}account");
+                                $role_stmt = $site_db->prepare(
+                                    "SELECT role FROM user_currencies WHERE account_id = ? LIMIT 1"
+                                );
+                                $role_stmt->bind_param('i', $account['id']);
+                                $role_stmt->execute();
+                                $role_result = $role_stmt->get_result();
+                                $_SESSION['role'] = $role_result->num_rows === 1
+                                    ? $role_result->fetch_assoc()['role']
+                                    : 'player';
+                                $role_stmt->close();
+
+                                $destination = in_array(
+                                    $_SESSION['role'],
+                                    ['admin', 'moderator'],
+                                    true
+                                ) ? 'admin/users' : 'account';
+                                header("Location: {$base_path}{$destination}");
                                 exit();
                             } else {
                                 $attempts = logFailedAttempt(
@@ -754,24 +771,27 @@ include_once $project_root . 'includes/header.php';
                     <?php echo translate('login_button', 'Sign In'); ?>
                 </button>
 
-                <div class="text-center pt-2 text-gray-300 text-sm">
-                    <?php echo translate('dont_have_account', "Don't have an account?"); ?>
+                <?php if (!empty($registration_enabled)): ?>
+                    <div class="text-center pt-2 text-gray-300 text-sm">
+                        <?php echo translate('dont_have_account', "Don't have an account?"); ?>
+                        <a
+                            href="<?php echo htmlspecialchars($base_path . 'register'); ?>"
+                            class="text-[#f2cf5b] font-bold hover:text-yellow-300 hover:underline transition-colors">
+                            <?php echo translate('register_link_text_simple', 'Register'); ?>
+                        </a>
+                    </div>
+                <?php endif; ?>
 
-                    <a
-                        href="<?php echo htmlspecialchars($base_path . 'register'); ?>"
-                        class="text-[#f2cf5b] font-bold hover:text-yellow-300 hover:underline transition-colors">
-                        <?php echo translate('register_link_text_simple', 'Register'); ?>
-                    </a>
-                </div>
-
-                <div class="text-center text-gray-400 text-sm">
-                    <a
-                        href="<?php echo htmlspecialchars($base_path . 'forgot_password'); ?>"
-                        class="text-[#f2cf5b] hover:text-yellow-300 hover:underline transition-colors">
-                        <i class="fas fa-key mr-1"></i>
-                        <?php echo translate('forgot_password_link', 'Forgot Password?'); ?>
-                    </a>
-                </div>
+                <?php if (!empty($password_recovery_enabled)): ?>
+                    <div class="text-center text-gray-400 text-sm">
+                        <a
+                            href="<?php echo htmlspecialchars($base_path . 'forgot_password'); ?>"
+                            class="text-[#f2cf5b] hover:text-yellow-300 hover:underline transition-colors">
+                            <i class="fas fa-key mr-1"></i>
+                            <?php echo translate('forgot_password_link', 'Forgot Password?'); ?>
+                        </a>
+                    </div>
+                <?php endif; ?>
             </form>
         </div>
     </div>

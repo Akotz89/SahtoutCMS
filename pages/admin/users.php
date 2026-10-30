@@ -3,6 +3,7 @@ define('ALLOWED_ACCESS', true);
 
 require_once __DIR__ . '/../../includes/paths.php';
 require_once $project_root . 'includes/session.php';
+require_once $project_root . 'includes/srp6.php';
 require_once $project_root . 'languages/language.php';
 require_once $project_root . 'includes/config.settings.php';
 
@@ -33,67 +34,111 @@ if ($result->num_rows > 0) {
 }
 $stmt->close();
 
-if (!in_array($_SESSION['role'], ['admin', 'moderator'])) {
+// Account credentials, bans, and GM levels are owner-only operations.
+if ($_SESSION['role'] !== 'admin') {
     header("Location: {$base_path}login");
     exit;
 }
 
-// Handle search, sort, role filter, ban filter, and gmlevel filter
+// Handle account search and realm-specific filters.
 $search_username = isset($_GET['search_username']) && $_GET['search_username'] !== '' ? trim($_GET['search_username']) : '';
 $search_email = isset($_GET['search_email']) && $_GET['search_email'] !== '' ? trim($_GET['search_email']) : '';
-$role_filter = isset($_GET['role_filter']) && in_array($_GET['role_filter'], ['player', 'moderator', 'admin']) ? $_GET['role_filter'] : '';
 $ban_filter = isset($_GET['ban_filter']) && in_array($_GET['ban_filter'], ['banned']) ? $_GET['ban_filter'] : '';
 $gmlevel_filter = isset($_GET['gmlevel_filter']) && in_array($_GET['gmlevel_filter'], ['player', '1', '2', '3']) ? $_GET['gmlevel_filter'] : '';
 $sort_id = isset($_GET['sort_id']) && in_array($_GET['sort_id'], ['asc', 'desc']) ? $_GET['sort_id'] : 'asc';
 
 $users_per_page = 10;
-$website_page = isset($_GET['website_page']) ? max(1, (int)$_GET['website_page']) : 1;
 $ingame_page = isset($_GET['ingame_page']) ? max(1, (int)$_GET['ingame_page']) : 1;
-$website_offset = ($website_page - 1) * $users_per_page;
 $ingame_offset = ($ingame_page - 1) * $users_per_page;
-
-// Determine active tab - check if tab is set in URL
-$active_tab = isset($_GET['tab']) && $_GET['tab'] === 'ingame' ? 'ingame' : 'website';
 
 // Handle form submissions
 $update_message = '';
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
-    if ($_POST['action'] === 'update') {
-        if (!isset($_POST['csrf_token']) || $_POST['csrf_token'] !== $_SESSION['csrf_token']) {
-            $update_message = alert_danger(translate('admin_users_csrf_error', 'CSRF token validation failed.'));
+    if ($_POST['action'] === 'create_account') {
+        if (!isset($_POST['csrf_token']) || !hash_equals($_SESSION['csrf_token'], $_POST['csrf_token'])) {
+            $update_message = alert_danger('CSRF token validation failed.');
         } else {
-            $account_id = (int)$_POST['account_id'];
-            $points = (int)$_POST['points'];
-            $tokens = (int)$_POST['tokens'];
-            $role = in_array($_POST['role'], ['player', 'moderator', 'admin']) ? $_POST['role'] : 'player';
-            $email = trim($_POST['email']);
-            
-            $stmt = $site_db->prepare("UPDATE " . DB_SITE . ".user_currencies SET points = ?, tokens = ?, role = ? WHERE account_id = ?");
-            $stmt->bind_param("iisi", $points, $tokens, $role, $account_id);
-            $success = $stmt->execute();
-            $stmt->close();
-            
-            $stmt = $auth_db->prepare("UPDATE " . DB_AUTH . ".account SET email = ? WHERE id = ?");
-            $stmt->bind_param("si", $email, $account_id);
-            $success = $success && $stmt->execute();
-            $stmt->close();
-            
-            if ($success) {
-                $update_message = alert_success(translate('admin_users_update_success', 'User updated successfully.'));
+            $username = strtoupper(trim($_POST['username'] ?? ''));
+            $email = trim($_POST['email'] ?? '');
+            $password = $_POST['password'] ?? '';
+
+            if (!preg_match('/^[A-Z0-9]{3,16}$/', $username)) {
+                $update_message = alert_danger('Username must contain 3-16 letters or numbers.');
+            } elseif (in_array($username, [$operator_owner_username, $operator_service_username], true)) {
+                $update_message = alert_danger('That username is reserved.');
+            } elseif ($email !== '' && !filter_var($email, FILTER_VALIDATE_EMAIL)) {
+                $update_message = alert_danger('Enter a valid email address or leave it empty.');
+            } elseif (strlen($password) < 8 || strlen($password) > 16) {
+                $update_message = alert_danger('Password must contain 8-16 characters.');
             } else {
-                $update_message = alert_danger(translate('admin_users_update_failed', 'Failed to update user.'));
+                $check = $auth_db->prepare("SELECT id FROM " . DB_AUTH . ".account WHERE username = ? OR (? <> '' AND email = ?) LIMIT 1");
+                $check->bind_param('sss', $username, $email, $email);
+                $check->execute();
+                $exists = $check->get_result()->num_rows > 0;
+                $check->close();
+
+                if ($exists) {
+                    $update_message = alert_danger('That username or email is already in use.');
+                } else {
+                    $salt = SRP6::GenerateSalt();
+                    $verifier = SRP6::CalculateVerifier($username, $password, $salt);
+                    $create = $auth_db->prepare("INSERT INTO " . DB_AUTH . ".account (username, salt, verifier, email, reg_mail, expansion) VALUES (?, ?, ?, ?, ?, 2)");
+                    $create->bind_param('sssss', $username, $salt, $verifier, $email, $email);
+                    $success = $create->execute();
+                    $create->close();
+                    $update_message = $success
+                        ? alert_success('Account created successfully.')
+                        : alert_danger('Failed to create account.');
+                }
             }
         }
     } elseif ($_POST['action'] === 'manage_account') {
-        if (!isset($_POST['csrf_token']) || $_POST['csrf_token'] !== $_SESSION['csrf_token']) {
+        if (!isset($_POST['csrf_token']) || !hash_equals($_SESSION['csrf_token'], $_POST['csrf_token'])) {
             $update_message = alert_danger(translate('admin_users_csrf_error', 'CSRF token validation failed.'));
         } else {
             $account_id = (int)$_POST['account_id'];
             $ban_action = $_POST['ban_action'] ?? '';
             $gmlevel = isset($_POST['gmlevel']) && in_array($_POST['gmlevel'], ['player', '1', '2', '3']) ? $_POST['gmlevel'] : '';
             $success = true;
-            
-            if ($ban_action === 'ban') {
+
+            $stmt = $auth_db->prepare("SELECT username FROM " . DB_AUTH . ".account WHERE id = ?");
+            $stmt->bind_param('i', $account_id);
+            $stmt->execute();
+            $target_account = $stmt->get_result()->fetch_assoc();
+            $stmt->close();
+
+            if (!$target_account) {
+                $success = false;
+                $update_message = alert_danger('Account not found.');
+            } elseif ($target_account['username'] === $operator_service_username) {
+                $success = false;
+                $update_message = alert_danger('The CMS service account cannot be managed here.');
+            } elseif ($target_account['username'] === $operator_owner_username && in_array($ban_action, ['ban', 'change_gm_role'], true)) {
+                $success = false;
+                $update_message = alert_danger('The owner account cannot be banned or have its GM access changed.');
+            } elseif ($ban_action === 'update_email') {
+                $email = trim($_POST['new_email'] ?? '');
+                if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
+                    $success = false;
+                    $update_message = alert_danger('Enter a valid email address.');
+                } else {
+                    $stmt = $auth_db->prepare("SELECT id FROM " . DB_AUTH . ".account WHERE email = ? AND id <> ? LIMIT 1");
+                    $stmt->bind_param('si', $email, $account_id);
+                    $stmt->execute();
+                    $email_in_use = $stmt->get_result()->num_rows > 0;
+                    $stmt->close();
+
+                    if ($email_in_use) {
+                        $success = false;
+                        $update_message = alert_danger('That email address is already in use.');
+                    } else {
+                        $stmt = $auth_db->prepare("UPDATE " . DB_AUTH . ".account SET email = ?, reg_mail = ? WHERE id = ?");
+                        $stmt->bind_param('ssi', $email, $email, $account_id);
+                        $success = $stmt->execute();
+                        $stmt->close();
+                    }
+                }
+            } elseif ($ban_action === 'ban') {
                 $ban_reason = trim($_POST['ban_reason']);
                 $ban_duration = $_POST['ban_duration'];
                 $ban_time = time();
@@ -132,6 +177,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                     $success = $stmt->execute();
                     $stmt->close();
                 }
+            } elseif ($ban_action === 'reset_password') {
+                $new_password = $_POST['new_password'] ?? '';
+                if (strlen($new_password) < 8 || strlen($new_password) > 16) {
+                    $success = false;
+                    $update_message = alert_danger('New password must contain 8-16 characters.');
+                } else {
+                    $new_salt = SRP6::GenerateSalt();
+                    $new_verifier = SRP6::CalculateVerifier($target_account['username'], $new_password, $new_salt);
+                    $stmt = $auth_db->prepare("UPDATE " . DB_AUTH . ".account SET salt = ?, verifier = ? WHERE id = ?");
+                    $stmt->bind_param('ssi', $new_salt, $new_verifier, $account_id);
+                    $success = $stmt->execute();
+                    $stmt->close();
+                }
+            } else {
+                $success = false;
+                $update_message = alert_danger('Select a valid account action.');
             }
             if ($success && empty($update_message)) {
                 $update_message = alert_success(translate('admin_users_action_success', 'Action completed successfully.'));
@@ -150,70 +211,10 @@ function alert_success($msg) {
     return '<div class="bg-green-900/40 border border-green-500/50 text-green-300 px-4 py-3 rounded-sm mb-6 flex items-center gap-3">' . $msg . '</div>';
 }
 
-// Count total website users
-$count_query = "SELECT COUNT(*) as total FROM " . DB_SITE . ".user_currencies uc JOIN " . DB_AUTH . ".account a ON uc.account_id = a.id WHERE 1=1";
-$params = [];
-$types = '';
-if ($search_username) {
-    $count_query .= " AND uc.username LIKE ?";
-    $params[] = "%$search_username%";
-    $types .= 's';
-}
-if ($search_email) {
-    $count_query .= " AND a.email LIKE ?";
-    $params[] = "%$search_email%";
-    $types .= 's';
-}
-if ($role_filter) {
-    $count_query .= " AND uc.role = ?";
-    $params[] = $role_filter;
-    $types .= 's';
-}
-$stmt = $site_db->prepare($count_query);
-if (!empty($params)) {
-    $stmt->bind_param($types, ...$params);
-}
-$stmt->execute();
-$total_website_users = $stmt->get_result()->fetch_assoc()['total'];
-$stmt->close();
-$total_website_pages = ceil($total_website_users / $users_per_page);
-
-// Fetch website users
-$users_query = "SELECT uc.account_id, uc.username, uc.avatar, uc.points, uc.tokens, uc.role, uc.last_updated, a.email
-                FROM " . DB_SITE . ".user_currencies uc JOIN " . DB_AUTH . ".account a ON uc.account_id = a.id WHERE 1=1";
-$params = [];
-$types = '';
-if ($search_username) {
-    $users_query .= " AND uc.username LIKE ?";
-    $params[] = "%$search_username%";
-    $types .= 's';
-}
-if ($search_email) {
-    $users_query .= " AND a.email LIKE ?";
-    $params[] = "%$search_email%";
-    $types .= 's';
-}
-if ($role_filter) {
-    $users_query .= " AND uc.role = ?";
-    $params[] = $role_filter;
-    $types .= 's';
-}
-$users_query .= " ORDER BY uc.account_id " . ($sort_id === 'desc' ? 'DESC' : 'ASC') . " LIMIT ? OFFSET ?";
-$params[] = $users_per_page;
-$params[] = $website_offset;
-$types .= 'ii';
-$stmt = $site_db->prepare($users_query);
-if (!empty($params)) {
-    $stmt->bind_param($types, ...$params);
-}
-$stmt->execute();
-$users_result = $stmt->get_result();
-$stmt->close();
-
-// Count total in-game accounts
-$count_query = "SELECT COUNT(*) as total FROM " . DB_AUTH . ".account a LEFT JOIN " . DB_AUTH . ".account_access aa ON a.id = aa.id WHERE 1=1";
-$params = [];
-$types = '';
+// Count total realm accounts
+$count_query = "SELECT COUNT(*) as total FROM " . DB_AUTH . ".account a LEFT JOIN " . DB_AUTH . ".account_access aa ON a.id = aa.id WHERE a.username <> ?";
+$params = [$operator_service_username];
+$types = 's';
 if ($search_username) {
     $count_query .= " AND a.username LIKE ?";
     $params[] = "%$search_username%";
@@ -249,9 +250,9 @@ $total_ingame_pages = ceil($total_ingame_accounts / $users_per_page);
 $accounts_query = "SELECT a.id, a.username, a.email, a.joindate, a.last_login, a.online, aa.gmlevel
                   FROM " . DB_AUTH . ".account a
                   LEFT JOIN " . DB_AUTH . ".account_access aa ON a.id = aa.id
-                  WHERE 1=1";
-$params = [];
-$types = '';
+                  WHERE a.username <> ?";
+$params = [$operator_service_username];
+$types = 's';
 if ($search_username) {
     $accounts_query .= " AND a.username LIKE ?";
     $params[] = "%$search_username%";
@@ -520,22 +521,6 @@ function getGMLevel($gmlevel) {
             background: rgba(30, 35, 45, 0.8);
         }
 
-        .status-admin { color: #f2cf5b; font-weight: 700; }
-        .status-moderator { color: #6a8cff; font-weight: 700; }
-
-        .tab-link {
-            color: #b8c8ff;
-            padding: 0.75rem 1.5rem;
-            font-weight: 600;
-            text-decoration: none;
-            border-bottom: 2px solid transparent;
-            transition: all 0.3s ease;
-            display: inline-block;
-            cursor: pointer;
-        }
-        .tab-link:hover { color: #f2cf5b; }
-        .tab-link.active { color: #f2cf5b; border-bottom-color: #f2cf5b; }
-
         .modal-backdrop {
             position: fixed;
             inset: 0;
@@ -553,20 +538,6 @@ function getGMLevel($gmlevel) {
         .modal-backdrop .panel {
             max-height: 90vh;
             overflow-y: auto;
-        }
-
-        .avatar-img {
-            width: 40px;
-            height: 40px;
-            border-radius: 50%;
-            object-fit: cover;
-        }
-
-        .tab-content {
-            display: none;
-        }
-        .tab-content.active {
-            display: block;
         }
 
         .character-grid {
@@ -664,22 +635,33 @@ function getGMLevel($gmlevel) {
             <div class="content-wrapper">
                 <div class="space-y-4 md:space-y-6 lg:space-y-8">
                     
-                    <h1 class="wow-title text-2xl md:text-3xl lg:text-4xl"><?php echo translate('admin_users_title', 'User Management'); ?></h1>
+                    <h1 class="wow-title text-2xl md:text-3xl lg:text-4xl"><?php echo translate('admin_users_title', 'Player Account Management'); ?></h1>
                     
                     <?php echo $update_message; ?>
+
+                    <!-- Native SahtoutCMS owner controls for creating playable accounts. -->
+                    <div class="panel p-4 md:p-6 lg:p-8">
+                        <h2 class="section-title text-lg md:text-xl mb-4 flex items-center gap-3">
+                            <i class="fas fa-user-plus text-[#f2cf5b]"></i>Create Player Account
+                        </h2>
+                        <form method="POST" action="<?php echo $base_path; ?>admin/users" autocomplete="off">
+                            <input type="hidden" name="action" value="create_account">
+                            <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars($_SESSION['csrf_token']); ?>">
+                            <div class="grid grid-cols-1 md:grid-cols-4 gap-3 md:gap-4">
+                                <input type="text" name="username" class="input-dark" required minlength="3" maxlength="16" pattern="[A-Za-z0-9]+" placeholder="Username">
+                                <input type="email" name="email" class="input-dark" placeholder="Email (optional)">
+                                <input type="password" name="password" class="input-dark" required minlength="8" maxlength="16" placeholder="Initial password (8-16 characters)">
+                                <button type="submit" class="btn-gold justify-center"><i class="fas fa-user-plus"></i>Create Player Account</button>
+                            </div>
+                        </form>
+                    </div>
 
                     <!-- Search Form -->
                     <div class="panel p-4 md:p-6 lg:p-8">
                         <form method="GET" action="<?php echo $base_path; ?>admin/users" id="searchForm">
-                            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">
+                            <div class="grid grid-cols-1 md:grid-cols-3 gap-3 md:gap-4">
                                 <input type="text" name="search_username" class="input-dark" placeholder="<?php echo translate('admin_users_search_username_placeholder', 'Search username...'); ?>" value="<?php echo htmlspecialchars($search_username); ?>">
                                 <input type="text" name="search_email" class="input-dark" placeholder="<?php echo translate('admin_users_search_email_placeholder', 'Search email...'); ?>" value="<?php echo htmlspecialchars($search_email); ?>">
-                                <select name="role_filter" class="input-dark">
-                                    <option value="" <?php echo $role_filter === '' ? 'selected' : ''; ?>><?php echo translate('admin_users_all_roles', 'All Roles'); ?></option>
-                                    <option value="player" <?php echo $role_filter === 'player' ? 'selected' : ''; ?>><?php echo translate('admin_users_role_player', 'Player'); ?></option>
-                                    <option value="moderator" <?php echo $role_filter === 'moderator' ? 'selected' : ''; ?>><?php echo translate('admin_users_role_moderator', 'Moderator'); ?></option>
-                                    <option value="admin" <?php echo $role_filter === 'admin' ? 'selected' : ''; ?>><?php echo translate('admin_users_role_admin', 'Admin'); ?></option>
-                                </select>
                                 <button type="submit" class="btn-gold justify-center">
                                     <i class="fas fa-search"></i> <?php echo translate('admin_users_apply_button', 'Apply'); ?>
                                 </button>
@@ -701,104 +683,11 @@ function getGMLevel($gmlevel) {
                                     <option value="desc" <?php echo $sort_id === 'desc' ? 'selected' : ''; ?>><?php echo translate('admin_users_sort_id_desc', 'Sort: Descending'); ?></option>
                                 </select>
                             </div>
-                            <input type="hidden" name="tab" id="tabInput" value="<?php echo $active_tab; ?>">
                         </form>
                     </div>
 
-                    <!-- Tabs -->
-                    <div class="border-b border-[rgba(201,162,39,.2)]">
-                        <nav class="flex gap-0 overflow-x-auto">
-                            <a class="tab-link whitespace-nowrap <?php echo $active_tab === 'website' ? 'active' : ''; ?>" href="<?php echo $base_path; ?>admin/users?tab=website<?php echo $search_username ? '&search_username=' . urlencode($search_username) : ''; ?><?php echo $search_email ? '&search_email=' . urlencode($search_email) : ''; ?><?php echo $role_filter ? '&role_filter=' . urlencode($role_filter) : ''; ?><?php echo $ban_filter ? '&ban_filter=' . urlencode($ban_filter) : ''; ?><?php echo $gmlevel_filter ? '&gmlevel_filter=' . urlencode($gmlevel_filter) : ''; ?><?php echo $sort_id ? '&sort_id=' . urlencode($sort_id) : ''; ?>">
-                                <i class="fas fa-globe mr-2"></i><?php echo translate('admin_users_tab_website', 'Website Users'); ?>
-                            </a>
-                            <a class="tab-link whitespace-nowrap <?php echo $active_tab === 'ingame' ? 'active' : ''; ?>" href="<?php echo $base_path; ?>admin/users?tab=ingame<?php echo $search_username ? '&search_username=' . urlencode($search_username) : ''; ?><?php echo $search_email ? '&search_email=' . urlencode($search_email) : ''; ?><?php echo $role_filter ? '&role_filter=' . urlencode($role_filter) : ''; ?><?php echo $ban_filter ? '&ban_filter=' . urlencode($ban_filter) : ''; ?><?php echo $gmlevel_filter ? '&gmlevel_filter=' . urlencode($gmlevel_filter) : ''; ?><?php echo $sort_id ? '&sort_id=' . urlencode($sort_id) : ''; ?>">
-                                <i class="fas fa-gamepad mr-2"></i><?php echo translate('admin_users_tab_ingame', 'In-Game Accounts'); ?>
-                            </a>
-                        </nav>
-                    </div>
-
-                    <!-- Website Tab -->
-                    <div id="website-tab" class="tab-content <?php echo $active_tab === 'website' ? 'active' : ''; ?>">
-                        <div class="panel p-4 md:p-6 lg:p-8">
-                            <h2 class="section-title text-lg md:text-xl mb-4 md:mb-6 flex items-center gap-3">
-                                <i class="fas fa-users text-[#f2cf5b]"></i>
-                                <?php echo translate('admin_users_website_users_header', 'Website Users'); ?>
-                            </h2>
-                            <div class="overflow-x-auto -mx-4 md:-mx-6 lg:-mx-8 px-4 md:px-6 lg:px-8">
-                                <table class="w-full table-dark">
-                                    <thead>
-                                        <tr>
-                                            <th><?php echo translate('admin_users_table_account_id', 'ID'); ?></th>
-                                            <th><?php echo translate('admin_users_table_username', 'Username'); ?></th>
-                                            <th class="hidden md:table-cell"><?php echo translate('admin_users_table_email', 'Email'); ?></th>
-                                            <th><?php echo translate('admin_users_table_avatar', 'Avatar'); ?></th>
-                                            <th><?php echo translate('admin_users_table_points', 'Points'); ?></th>
-                                            <th class="hidden sm:table-cell"><?php echo translate('admin_users_table_tokens', 'Tokens'); ?></th>
-                                            <th><?php echo translate('admin_users_table_role', 'Role'); ?></th>
-                                            <th class="hidden lg:table-cell"><?php echo translate('admin_users_table_last_updated', 'Updated'); ?></th>
-                                            <th><?php echo translate('admin_users_table_action', 'Action'); ?></th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        <?php if ($users_result->num_rows === 0): ?>
-                                            <tr>
-                                                <td colspan="9" class="text-center text-gray-400 py-6 md:py-8">
-                                                    <i class="fas fa-users-slash text-2xl md:text-3xl text-gray-600 block mb-2"></i>
-                                                    <?php echo translate('admin_users_no_users_found', 'No users found.'); ?>
-                                                </td>
-                                            </tr>
-                                        <?php else: ?>
-                                            <?php while ($user = $users_result->fetch_assoc()): ?>
-                                                <tr id="user-<?php echo $user['account_id']; ?>">
-                                                    <td class="text-sm md:text-base"><?php echo htmlspecialchars($user['account_id']); ?></td>
-                                                    <td class="font-semibold text-white text-sm md:text-base"><?php echo htmlspecialchars($user['username']); ?></td>
-                                                    <td class="hidden md:table-cell text-gray-400 text-sm"><?php echo htmlspecialchars($user['email'] ?? translate('admin_users_email_not_set', 'Not set')); ?></td>
-                                                    <td>
-                                                        <img src="<?php echo $base_path . 'img/accountimg/profile_pics/' . (!empty($user['avatar']) ? htmlspecialchars($user['avatar']) : 'user.jpg'); ?>" class="avatar-img" alt="<?php echo translate('admin_users_avatar_alt', 'Avatar'); ?>">
-                                                    </td>
-                                                    <td class="text-sm md:text-base"><?php echo htmlspecialchars($user['points']); ?></td>
-                                                    <td class="hidden sm:table-cell text-sm md:text-base"><?php echo htmlspecialchars($user['tokens']); ?></td>
-                                                    <td><span class="status-<?php echo htmlspecialchars($user['role']); ?> text-sm md:text-base"><?php echo ucfirst(translate('admin_users_role_' . $user['role'], ucfirst($user['role']))); ?></span></td>
-                                                    <td class="hidden lg:table-cell text-sm text-gray-400"><?php echo $user['last_updated'] ? date('M j, Y', strtotime($user['last_updated'])) : translate('admin_users_never', 'Never'); ?></td>
-                                                    <td>
-                                                        <button type="button" class="btn-iron btn-iron-sm open-modal-btn" data-modal="editModal-<?php echo $user['account_id']; ?>">
-                                                            <i class="fas fa-edit"></i> <?php echo translate('admin_users_edit_button', 'Edit'); ?>
-                                                        </button>
-                                                    </td>
-                                                </tr>
-                                            <?php endwhile; ?>
-                                        <?php endif; ?>
-                                        <?php $users_result->free(); ?>
-                                    </tbody>
-                                </table>
-                            </div>
-                            <!-- Pagination -->
-                            <?php if ($total_website_pages > 1): ?>
-                                <nav class="flex justify-center gap-2 mt-6 md:mt-8 flex-wrap">
-                                    <?php if ($website_page > 1): ?>
-                                        <a href="<?php echo $base_path; ?>admin/users?tab=website&website_page=<?php echo $website_page - 1; ?><?php echo $search_username ? '&search_username=' . urlencode($search_username) : ''; ?><?php echo $search_email ? '&search_email=' . urlencode($search_email) : ''; ?><?php echo $role_filter ? '&role_filter=' . urlencode($role_filter) : ''; ?><?php echo $ban_filter ? '&ban_filter=' . urlencode($ban_filter) : ''; ?><?php echo $gmlevel_filter ? '&gmlevel_filter=' . urlencode($gmlevel_filter) : ''; ?><?php echo $sort_id ? '&sort_id=' . urlencode($sort_id) : ''; ?>" class="btn-iron btn-iron-sm">
-                                            <i class="fas fa-chevron-left"></i> <?php echo translate('admin_users_previous', 'Previous'); ?>
-                                        </a>
-                                    <?php endif; ?>
-                                    <?php for ($i = 1; $i <= $total_website_pages; $i++): ?>
-                                        <?php if ($i === $website_page): ?>
-                                            <span class="btn-gold btn-iron-sm cursor-default"><?php echo $i; ?></span>
-                                        <?php else: ?>
-                                            <a href="<?php echo $base_path; ?>admin/users?tab=website&website_page=<?php echo $i; ?><?php echo $search_username ? '&search_username=' . urlencode($search_username) : ''; ?><?php echo $search_email ? '&search_email=' . urlencode($search_email) : ''; ?><?php echo $role_filter ? '&role_filter=' . urlencode($role_filter) : ''; ?><?php echo $ban_filter ? '&ban_filter=' . urlencode($ban_filter) : ''; ?><?php echo $gmlevel_filter ? '&gmlevel_filter=' . urlencode($gmlevel_filter) : ''; ?><?php echo $sort_id ? '&sort_id=' . urlencode($sort_id) : ''; ?>" class="btn-iron btn-iron-sm"><?php echo $i; ?></a>
-                                        <?php endif; ?>
-                                    <?php endfor; ?>
-                                    <?php if ($website_page < $total_website_pages): ?>
-                                        <a href="<?php echo $base_path; ?>admin/users?tab=website&website_page=<?php echo $website_page + 1; ?><?php echo $search_username ? '&search_username=' . urlencode($search_username) : ''; ?><?php echo $search_email ? '&search_email=' . urlencode($search_email) : ''; ?><?php echo $role_filter ? '&role_filter=' . urlencode($role_filter) : ''; ?><?php echo $ban_filter ? '&ban_filter=' . urlencode($ban_filter) : ''; ?><?php echo $gmlevel_filter ? '&gmlevel_filter=' . urlencode($gmlevel_filter) : ''; ?><?php echo $sort_id ? '&sort_id=' . urlencode($sort_id) : ''; ?>" class="btn-iron btn-iron-sm">
-                                            <?php echo translate('admin_users_next', 'Next'); ?> <i class="fas fa-chevron-right"></i>
-                                        </a>
-                                    <?php endif; ?>
-                                </nav>
-                            <?php endif; ?>
-                        </div>
-                    </div>
-
-                    <!-- In-Game Tab -->
-                    <div id="ingame-tab" class="tab-content <?php echo $active_tab === 'ingame' ? 'active' : ''; ?>">
+                    <!-- Realm Accounts -->
+                    <div id="realm-accounts">
                         <div class="panel p-4 md:p-6 lg:p-8">
                             <h2 class="section-title text-lg md:text-xl mb-4 md:mb-6 flex items-center gap-3">
                                 <i class="fas fa-gamepad text-[#f2cf5b]"></i>
@@ -863,7 +752,7 @@ function getGMLevel($gmlevel) {
                             <?php if ($total_ingame_pages > 1): ?>
                                 <nav class="flex justify-center gap-2 mt-6 md:mt-8 flex-wrap">
                                     <?php if ($ingame_page > 1): ?>
-                                        <a href="<?php echo $base_path; ?>admin/users?tab=ingame&ingame_page=<?php echo $ingame_page - 1; ?><?php echo $search_username ? '&search_username=' . urlencode($search_username) : ''; ?><?php echo $search_email ? '&search_email=' . urlencode($search_email) : ''; ?><?php echo $role_filter ? '&role_filter=' . urlencode($role_filter) : ''; ?><?php echo $ban_filter ? '&ban_filter=' . urlencode($ban_filter) : ''; ?><?php echo $gmlevel_filter ? '&gmlevel_filter=' . urlencode($gmlevel_filter) : ''; ?><?php echo $sort_id ? '&sort_id=' . urlencode($sort_id) : ''; ?>" class="btn-iron btn-iron-sm">
+                                        <a href="<?php echo $base_path; ?>admin/users?ingame_page=<?php echo $ingame_page - 1; ?><?php echo $search_username ? '&search_username=' . urlencode($search_username) : ''; ?><?php echo $search_email ? '&search_email=' . urlencode($search_email) : ''; ?><?php echo $ban_filter ? '&ban_filter=' . urlencode($ban_filter) : ''; ?><?php echo $gmlevel_filter ? '&gmlevel_filter=' . urlencode($gmlevel_filter) : ''; ?><?php echo $sort_id ? '&sort_id=' . urlencode($sort_id) : ''; ?>" class="btn-iron btn-iron-sm">
                                             <i class="fas fa-chevron-left"></i> <?php echo translate('admin_users_previous', 'Previous'); ?>
                                         </a>
                                     <?php endif; ?>
@@ -871,11 +760,11 @@ function getGMLevel($gmlevel) {
                                         <?php if ($i === $ingame_page): ?>
                                             <span class="btn-gold btn-iron-sm cursor-default"><?php echo $i; ?></span>
                                         <?php else: ?>
-                                            <a href="<?php echo $base_path; ?>admin/users?tab=ingame&ingame_page=<?php echo $i; ?><?php echo $search_username ? '&search_username=' . urlencode($search_username) : ''; ?><?php echo $search_email ? '&search_email=' . urlencode($search_email) : ''; ?><?php echo $role_filter ? '&role_filter=' . urlencode($role_filter) : ''; ?><?php echo $ban_filter ? '&ban_filter=' . urlencode($ban_filter) : ''; ?><?php echo $gmlevel_filter ? '&gmlevel_filter=' . urlencode($gmlevel_filter) : ''; ?><?php echo $sort_id ? '&sort_id=' . urlencode($sort_id) : ''; ?>" class="btn-iron btn-iron-sm"><?php echo $i; ?></a>
+                                            <a href="<?php echo $base_path; ?>admin/users?ingame_page=<?php echo $i; ?><?php echo $search_username ? '&search_username=' . urlencode($search_username) : ''; ?><?php echo $search_email ? '&search_email=' . urlencode($search_email) : ''; ?><?php echo $ban_filter ? '&ban_filter=' . urlencode($ban_filter) : ''; ?><?php echo $gmlevel_filter ? '&gmlevel_filter=' . urlencode($gmlevel_filter) : ''; ?><?php echo $sort_id ? '&sort_id=' . urlencode($sort_id) : ''; ?>" class="btn-iron btn-iron-sm"><?php echo $i; ?></a>
                                         <?php endif; ?>
                                     <?php endfor; ?>
                                     <?php if ($ingame_page < $total_ingame_pages): ?>
-                                        <a href="<?php echo $base_path; ?>admin/users?tab=ingame&ingame_page=<?php echo $ingame_page + 1; ?><?php echo $search_username ? '&search_username=' . urlencode($search_username) : ''; ?><?php echo $search_email ? '&search_email=' . urlencode($search_email) : ''; ?><?php echo $role_filter ? '&role_filter=' . urlencode($role_filter) : ''; ?><?php echo $ban_filter ? '&ban_filter=' . urlencode($ban_filter) : ''; ?><?php echo $gmlevel_filter ? '&gmlevel_filter=' . urlencode($gmlevel_filter) : ''; ?><?php echo $sort_id ? '&sort_id=' . urlencode($sort_id) : ''; ?>" class="btn-iron btn-iron-sm">
+                                        <a href="<?php echo $base_path; ?>admin/users?ingame_page=<?php echo $ingame_page + 1; ?><?php echo $search_username ? '&search_username=' . urlencode($search_username) : ''; ?><?php echo $search_email ? '&search_email=' . urlencode($search_email) : ''; ?><?php echo $ban_filter ? '&ban_filter=' . urlencode($ban_filter) : ''; ?><?php echo $gmlevel_filter ? '&gmlevel_filter=' . urlencode($gmlevel_filter) : ''; ?><?php echo $sort_id ? '&sort_id=' . urlencode($sort_id) : ''; ?>" class="btn-iron btn-iron-sm">
                                             <?php echo translate('admin_users_next', 'Next'); ?> <i class="fas fa-chevron-right"></i>
                                         </a>
                                     <?php endif; ?>
@@ -890,63 +779,8 @@ function getGMLevel($gmlevel) {
 
     <!-- Modals Container - All modals go here -->
     <div id="modals-container">
-        <!-- Edit Modals for Website Users -->
-        <?php 
-        // Reset and re-fetch users for modals
-        $stmt = $site_db->prepare($users_query);
-        if (!empty($params)) {
-            $stmt->bind_param($types, ...$params);
-        }
-        $stmt->execute();
-        $modal_users_result = $stmt->get_result();
-        while ($user = $modal_users_result->fetch_assoc()): 
-        ?>
-            <div id="editModal-<?php echo $user['account_id']; ?>" class="modal-backdrop">
-                <div class="panel w-full max-w-lg p-6 md:p-8 relative max-h-[90vh] overflow-y-auto">
-                    <button type="button" class="absolute top-4 right-4 text-gray-400 hover:text-white text-2xl close-modal-btn" data-modal="editModal-<?php echo $user['account_id']; ?>">&times;</button>
-                    <h3 class="wow-title text-2xl mb-6"><?php echo translate('admin_users_edit_modal_title', 'Edit User: ') . htmlspecialchars($user['username']); ?></h3>
-                    <form method="POST" action="<?php echo $base_path; ?>admin/users">
-                        <input type="hidden" name="action" value="update">
-                        <input type="hidden" name="account_id" value="<?php echo $user['account_id']; ?>">
-                        <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars($_SESSION['csrf_token']); ?>">
-                        
-                        <div class="mb-4">
-                            <label class="block text-sm font-semibold text-[#f2cf5b] mb-2 font-['Cinzel'] tracking-wide"><?php echo translate('admin_users_label_username', 'Username'); ?></label>
-                            <input type="text" class="input-dark" value="<?php echo htmlspecialchars($user['username']); ?>" disabled>
-                        </div>
-                        <div class="mb-4">
-                            <label class="block text-sm font-semibold text-[#f2cf5b] mb-2 font-['Cinzel'] tracking-wide"><?php echo translate('admin_users_label_email', 'Email'); ?></label>
-                            <input type="email" name="email" class="input-dark" value="<?php echo htmlspecialchars($user['email'] ?? ''); ?>" required>
-                        </div>
-                        <div class="mb-4">
-                            <label class="block text-sm font-semibold text-[#f2cf5b] mb-2 font-['Cinzel'] tracking-wide"><?php echo translate('admin_users_label_points', 'Points'); ?></label>
-                            <input type="number" name="points" class="input-dark" value="<?php echo htmlspecialchars($user['points']); ?>" required>
-                        </div>
-                        <div class="mb-4">
-                            <label class="block text-sm font-semibold text-[#f2cf5b] mb-2 font-['Cinzel'] tracking-wide"><?php echo translate('admin_users_label_tokens', 'Tokens'); ?></label>
-                            <input type="number" name="tokens" class="input-dark" value="<?php echo htmlspecialchars($user['tokens']); ?>" required>
-                        </div>
-                        <div class="mb-4">
-                            <label class="block text-sm font-semibold text-[#f2cf5b] mb-2 font-['Cinzel'] tracking-wide"><?php echo translate('admin_users_label_role', 'Role'); ?></label>
-                            <select name="role" class="input-dark">
-                                <option value="player" <?php echo $user['role'] === 'player' ? 'selected' : ''; ?>><?php echo translate('admin_users_role_player', 'Player'); ?></option>
-                                <option value="moderator" <?php echo $user['role'] === 'moderator' ? 'selected' : ''; ?>><?php echo translate('admin_users_role_moderator', 'Moderator'); ?></option>
-                                <option value="admin" <?php echo $user['role'] === 'admin' ? 'selected' : ''; ?>><?php echo translate('admin_users_role_admin', 'Admin'); ?></option>
-                            </select>
-                        </div>
-                        <div class="flex justify-end gap-4 pt-4">
-                            <button type="button" class="btn-iron close-modal-btn" data-modal="editModal-<?php echo $user['account_id']; ?>"><?php echo translate('admin_users_cancel_button', 'Cancel'); ?></button>
-                            <button type="submit" class="btn-gold"><?php echo translate('admin_users_save_button', 'Save'); ?></button>
-                        </div>
-                    </form>
-                </div>
-            </div>
-        <?php endwhile; 
-        $modal_users_result->free();
-        $stmt->close();
-        ?>
 
-        <!-- Character Modals for In-Game Accounts -->
+        <!-- Character and account management modals -->
         <?php foreach ($accounts as $account): ?>
             <!-- Characters Modal -->
             <div id="charsModal-<?php echo $account['id']; ?>" class="modal-backdrop">
@@ -991,12 +825,30 @@ function getGMLevel($gmlevel) {
                         <div class="mb-4">
                             <label class="block text-sm font-semibold text-[#f2cf5b] mb-2 font-['Cinzel'] tracking-wide"><?php echo translate('admin_users_label_action', 'Action'); ?></label>
                             <select name="ban_action" class="input-dark ban-action-select" data-account-id="<?php echo $account['id']; ?>">
-                                <option value="change_gm_role"><?php echo translate('admin_users_action_change_gm_role', 'Change GM Role'); ?></option>
-                                <option value="ban"><?php echo translate('admin_users_action_ban', 'Ban Account'); ?></option>
+                                <option value="update_email">Update Email</option>
+                                <option value="reset_password">Reset Password</option>
+                                <?php if ($account['username'] !== $operator_owner_username): ?>
+                                    <option value="change_gm_role"><?php echo translate('admin_users_action_change_gm_role', 'Change GM Role'); ?></option>
+                                    <option value="ban"><?php echo translate('admin_users_action_ban', 'Ban Account'); ?></option>
+                                <?php endif; ?>
                                 <?php if (!empty($account['banInfo'])): ?>
                                     <option value="unban"><?php echo translate('admin_users_action_unban', 'Unban Account'); ?></option>
                                 <?php endif; ?>
                             </select>
+                        </div>
+
+                        <div class="email-fields-<?php echo $account['id']; ?>">
+                            <div class="mb-4">
+                                <label class="block text-sm font-semibold text-[#f2cf5b] mb-2 font-['Cinzel'] tracking-wide">Email Address</label>
+                                <input type="email" name="new_email" class="input-dark" value="<?php echo htmlspecialchars($account['email'] ?? ''); ?>" placeholder="player@example.test">
+                            </div>
+                        </div>
+
+                        <div class="password-fields-<?php echo $account['id']; ?>" style="display:none;">
+                            <div class="mb-4">
+                                <label class="block text-sm font-semibold text-[#f2cf5b] mb-2 font-['Cinzel'] tracking-wide">New Password</label>
+                                <input type="password" name="new_password" class="input-dark" minlength="8" maxlength="16" placeholder="8-16 characters">
+                            </div>
                         </div>
                         
                         <div class="ban-fields-<?php echo $account['id']; ?>" style="display:none;">
@@ -1016,14 +868,16 @@ function getGMLevel($gmlevel) {
                             </div>
                         </div>
                         
-                        <div class="mb-4">
-                            <label class="block text-sm font-semibold text-[#f2cf5b] mb-2 font-['Cinzel'] tracking-wide"><?php echo translate('admin_users_label_gm_level', 'GM Level'); ?></label>
-                            <select name="gmlevel" class="input-dark">
-                                <option value="player" <?php echo is_null($account['gmlevel']) ? 'selected' : ''; ?>><?php echo translate('admin_users_gmlevel_player', 'Player'); ?></option>
-                                <option value="1" <?php echo isset($account['gmlevel']) && $account['gmlevel'] == 1 ? 'selected' : ''; ?>><?php echo translate('admin_users_gmlevel_1', 'GM Level 1'); ?></option>
-                                <option value="2" <?php echo isset($account['gmlevel']) && $account['gmlevel'] == 2 ? 'selected' : ''; ?>><?php echo translate('admin_users_gmlevel_2', 'GM Level 2'); ?></option>
-                                <option value="3" <?php echo isset($account['gmlevel']) && $account['gmlevel'] == 3 ? 'selected' : ''; ?>><?php echo translate('admin_users_gmlevel_3', 'GM Level 3'); ?></option>
-                            </select>
+                        <div class="gm-fields-<?php echo $account['id']; ?>" style="display:none;">
+                            <div class="mb-4">
+                                <label class="block text-sm font-semibold text-[#f2cf5b] mb-2 font-['Cinzel'] tracking-wide"><?php echo translate('admin_users_label_gm_level', 'GM Level'); ?></label>
+                                <select name="gmlevel" class="input-dark">
+                                    <option value="player" <?php echo is_null($account['gmlevel']) ? 'selected' : ''; ?>><?php echo translate('admin_users_gmlevel_player', 'Player'); ?></option>
+                                    <option value="1" <?php echo isset($account['gmlevel']) && $account['gmlevel'] == 1 ? 'selected' : ''; ?>><?php echo translate('admin_users_gmlevel_1', 'GM Level 1'); ?></option>
+                                    <option value="2" <?php echo isset($account['gmlevel']) && $account['gmlevel'] == 2 ? 'selected' : ''; ?>><?php echo translate('admin_users_gmlevel_2', 'GM Level 2'); ?></option>
+                                    <option value="3" <?php echo isset($account['gmlevel']) && $account['gmlevel'] == 3 ? 'selected' : ''; ?>><?php echo translate('admin_users_gmlevel_3', 'GM Level 3'); ?></option>
+                                </select>
+                            </div>
                         </div>
                         
                         <div class="flex justify-end gap-4 pt-4">
@@ -1080,15 +934,28 @@ function getGMLevel($gmlevel) {
             }
         });
 
-        // Toggle ban fields
+        function updateAccountFields(select) {
+            const accountId = select.getAttribute('data-account-id');
+            const fieldVisibility = {
+                '.email-fields-': select.value === 'update_email',
+                '.password-fields-': select.value === 'reset_password',
+                '.ban-fields-': select.value === 'ban',
+                '.gm-fields-': select.value === 'change_gm_role'
+            };
+
+            Object.entries(fieldVisibility).forEach(function([prefix, visible]) {
+                const fields = document.querySelector(prefix + accountId);
+                if (fields) {
+                    fields.style.display = visible ? 'block' : 'none';
+                }
+            });
+        }
+
+        // Show only the fields needed by the selected account action.
         document.addEventListener('change', function(e) {
             const select = e.target.closest('.ban-action-select');
             if (select) {
-                const accountId = select.getAttribute('data-account-id');
-                const banFields = document.querySelector('.ban-fields-' + accountId);
-                if (banFields) {
-                    banFields.style.display = select.value === 'ban' ? 'block' : 'none';
-                }
+                updateAccountFields(select);
             }
         });
 
@@ -1101,14 +968,10 @@ function getGMLevel($gmlevel) {
             }
         });
 
-        // Initialize ban fields on page load
+        // Initialize action-specific fields on page load.
         document.addEventListener('DOMContentLoaded', function() {
             document.querySelectorAll('.ban-action-select').forEach(function(select) {
-                const accountId = select.getAttribute('data-account-id');
-                const banFields = document.querySelector('.ban-fields-' + accountId);
-                if (banFields) {
-                    banFields.style.display = select.value === 'ban' ? 'block' : 'none';
-                }
+                updateAccountFields(select);
             });
         });
     </script>

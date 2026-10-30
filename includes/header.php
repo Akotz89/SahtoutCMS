@@ -1,7 +1,5 @@
 <?php
-ini_set('display_errors', 1);
-ini_set('display_startup_errors', 1);
-error_reporting(E_ALL);
+ini_set('display_errors', 0);
 
 // Include paths.php to access $project_root and $base_path
 require_once __DIR__ . '/paths.php';
@@ -16,16 +14,6 @@ require_once $project_root . 'includes/config.settings.php'; // load logo + soci
 
 // Include language detection
 require_once $project_root . 'languages/language.php';
-
-// Check if session is started; warn in source code if not
-if (session_status() !== PHP_SESSION_ACTIVE) {
-    echo "<!-- WARNING: Session not started. Ensure session_start() is called in the parent script. -->\n";
-}
-
-// Debug: Check if session variable is set (visible in source code only)
-if (!isset($_SESSION['user_id'])) {
-    echo "<!-- DEBUG: No user session detected. Ensure login script sets \$_SESSION['user_id']. -->\n";
-}
 
 // Ensure $page_class is defined in the including page; default to 'default'
 $page_class = isset($page_class) ? $page_class : 'default';
@@ -46,9 +34,7 @@ function getLanguageUrl($lang) {
     return $currentUrl . '?' . $queryString;
 }
 
-// Fetch user points, tokens, email, avatar, gmlevel, and role if logged in
-$points = 0;
-$tokens = 0;
+// Fetch the operator identity and access role when logged in.
 $email = 'user@example.com';
 $avatar = $base_path . 'img/accountimg/profile_pics/user.jpg'; // Default avatar
 $gmlevel = 0;
@@ -61,9 +47,9 @@ if (isset($_SESSION['user_id'])) {
         $avatar = $base_path . 'img/accountimg/profile_pics/' . $avatar_filename;
     }
 
-    // Query site_db for points, tokens, avatar, and role
+    // Currencies are intentionally omitted in operator-console mode.
     $stmt_site = $site_db->prepare("
-        SELECT points, tokens, avatar, role 
+        SELECT avatar, role
         FROM user_currencies 
         WHERE account_id = ?
     ");
@@ -90,8 +76,6 @@ if (isset($_SESSION['user_id'])) {
             $row_site = $result_site->fetch_assoc();
             $row_auth = $result_auth->fetch_assoc();
 
-            $points = (int)$row_site['points'];
-            $tokens = (int)$row_site['tokens'];
             $email = htmlspecialchars($row_auth['email'] ?? 'user@example.com', ENT_QUOTES, 'UTF-8');
             $role = $row_site['role'] ?? 'player';
 
@@ -327,8 +311,7 @@ $is_auth_page = in_array($page_class, ['login', 'register']);
         }
 
         /* ============ DROPDOWNS ============ */
-        #profileDropdownContainer,
-        #langDropdownContainer {
+        #profileDropdownContainer {
             position: relative;
         }
 
@@ -350,8 +333,7 @@ $is_auth_page = in_array($page_class, ['login', 'register']);
             z-index: 0;
         }
 
-        .dropdown-menu,
-        .lang-options {
+        .dropdown-menu {
             position: absolute !important;
             right: 0 !important;
             left: auto !important;
@@ -395,36 +377,6 @@ $is_auth_page = in_array($page_class, ['login', 'register']);
             background: linear-gradient(90deg, transparent, rgba(201,162,39,.4), transparent);
             position: relative;
             z-index: 1;
-        }
-
-        /* ============ CURRENCY BADGES ============ */
-        .badge-gold {
-            display: inline-flex;
-            align-items: center;
-            gap: .4rem;
-            padding: .35rem .75rem;
-            background: linear-gradient(180deg, #f6d478 0%, var(--gold-dark) 48%, var(--gold-deep) 100%);
-            color: #1a1200;
-            font-weight: 800;
-            font-size: .8rem;
-            letter-spacing: .02em;
-            text-shadow: 0 1px 0 rgba(255,255,255,.35);
-            box-shadow: inset 0 0 0 1px rgba(255,255,255,.28), inset 0 -4px 8px rgba(0,0,0,.25);
-            clip-path: polygon(6px 0, 100% 0, 100% calc(100% - 6px), calc(100% - 6px) 100%, 0 100%, 0 6px);
-        }
-
-        .badge-iron {
-            display: inline-flex;
-            align-items: center;
-            gap: .4rem;
-            padding: .35rem .75rem;
-            background: linear-gradient(180deg, #5a4070 0%, #3a284d 55%, #1e1428 100%);
-            color: #e2d5f0;
-            font-weight: 800;
-            font-size: .8rem;
-            letter-spacing: .02em;
-            box-shadow: inset 0 0 0 1px rgba(160,120,255,.25), inset 0 -4px 8px rgba(0,0,0,.4);
-            clip-path: polygon(6px 0, 100% 0, 100% calc(100% - 6px), calc(100% - 6px) 100%, 0 100%, 0 6px);
         }
 
         /* ============ AVATAR ============ */
@@ -558,8 +510,7 @@ $is_auth_page = in_array($page_class, ['login', 'register']);
             }
         }
 
-        .dropdown-menu.show,
-        .lang-options.show {
+        .dropdown-menu.show {
             display: block !important;
         }
     </style>
@@ -573,7 +524,7 @@ $is_auth_page = in_array($page_class, ['login', 'register']);
             <div class="parallelogram"></div>
 
             <!-- Logo -->
-            <a href="<?php echo $base_path; ?>" class="flex-shrink-0 transition-transform duration-300 hover:scale-105 hover:drop-shadow-[0_0_12px_rgba(242,207,82,0.5)]" style="position: relative; z-index: 1;">
+            <a href="<?php echo $base_path . (!empty($_SESSION['user_id']) ? 'admin/users' : 'login'); ?>" class="flex-shrink-0 transition-transform duration-300 hover:scale-105 hover:drop-shadow-[0_0_12px_rgba(242,207,82,0.5)]" style="position: relative; z-index: 1;">
                 <img src="<?php echo $base_path . $site_logo; ?>" alt="Server Logo" class="h-16 md:h-20 align-middle">
             </a>
 
@@ -589,37 +540,16 @@ $is_auth_page = in_array($page_class, ['login', 'register']);
                     ✖
                 </button>
 
-                <a href="<?php echo $base_path; ?>" class="nav-link <?php echo $page_class === 'home' ? 'active' : ''; ?>">
-                    <?php echo translate('nav_home', 'Home'); ?>
-                </a>
-
-                <a href="<?php echo $base_path; ?>how_to_play" class="nav-link <?php echo $page_class === 'how_to_play' ? 'active' : ''; ?>">
-                    <?php echo translate('nav_how_to_play', 'How to Play'); ?>
-                </a>
-
-                <a href="<?php echo $base_path; ?>news" class="nav-link <?php echo $page_class === 'news' ? 'active' : ''; ?>">
-                    <?php echo translate('nav_news', 'News'); ?>
-                </a>
-
-                <a href="<?php echo $base_path; ?>armory/solo_pvp" class="nav-link <?php echo strpos($page_class, 'armory') !== false ? 'active' : ''; ?>">
-                    <?php echo translate('nav_armory', 'Armory'); ?>
-                </a>
-
-                <a href="<?php echo $base_path; ?>shop" class="nav-link <?php echo $page_class === 'shop' ? 'active' : ''; ?>">
-                    <?php echo translate('nav_shop', 'Shop'); ?>
-                </a>
-
                 <?php if (empty($_SESSION['user_id'])): ?>
-                    <a href="<?php echo $base_path; ?>register" class="nav-link <?php echo $page_class === 'register' ? 'active' : ''; ?>">
-                        <?php echo translate('nav_register', 'Register'); ?>
-                    </a>
-
                     <a href="<?php echo $base_path; ?>login" class="nav-link <?php echo $page_class === 'login' ? 'active' : ''; ?>">
                         <?php echo translate('nav_login', 'Login'); ?>
                     </a>
                 <?php else: ?>
-                    <a href="<?php echo $base_path; ?>account" class="nav-link <?php echo $page_class === 'account' ? 'active' : ''; ?>">
-                        <?php echo translate('nav_account', 'Account'); ?>
+                    <a href="<?php echo $base_path; ?>admin/dashboard" class="nav-link <?php echo $page_class === 'dashboard' ? 'active' : ''; ?>">
+                        <?php echo translate('admin_dashboard', 'Dashboard'); ?>
+                    </a>
+                    <a href="<?php echo $base_path; ?>admin/users" class="nav-link <?php echo $page_class === 'users' ? 'active' : ''; ?>">
+                        <?php echo translate('admin_users', 'User Management'); ?>
                     </a>
                 <?php endif; ?>
             </nav>
@@ -629,11 +559,6 @@ $is_auth_page = in_array($page_class, ['login', 'register']);
 
                 <!-- User Profile (Logged In) -->
                 <?php if (!empty($_SESSION['user_id'])): ?>
-                    <div class="hidden md:flex items-center gap-2">
-                        <span class="badge-gold"><i class="fas fa-coins"></i> <?php echo $points; ?></span>
-                        <span class="badge-iron"><i class="fas fa-gem"></i> <?php echo $tokens; ?></span>
-                    </div>
-
                     <div id="profileDropdownContainer">
                         <img src="<?php echo $avatar; ?>" alt="User Profile" class="avatar-frame" id="profileToggle">
 
@@ -649,33 +574,17 @@ $is_auth_page = in_array($page_class, ['login', 'register']);
 
                                         <p class="text-gray-400 text-xs truncate"><?php echo $email; ?></p>
 
-                                        <div class="flex gap-2 mt-2">
-                                            <span class="badge-gold text-[10px] !py-1 !px-1.5"><i class="fas fa-coins"></i> <?php echo $points; ?></span>
-                                            <span class="badge-iron text-[10px] !py-1 !px-1.5"><i class="fas fa-gem"></i> <?php echo $tokens; ?></span>
-                                        </div>
                                     </div>
                                 </div>
                             </div>
 
                             <div class="py-2 relative z-10">
-                                <a href="<?php echo $base_path; ?>account" class="dropdown-item">
-                                    <i class="fas fa-user-circle w-5 text-center text-[#f2cf5b]"></i>
-                                    <?php echo translate('account_settings', 'Account Settings'); ?>
-                                </a>
-
                                 <?php if ($gmlevel > 0 || $role === 'admin' || $role === 'moderator'): ?>
-                                    <a href="<?php echo $base_path; ?>admin/dashboard" class="dropdown-item">
-                                        <i class="fas fa-cogs w-5 text-center text-[#f2cf5b]"></i>
-                                        <?php echo translate('admin_panel', 'Admin Panel'); ?>
+                                    <a href="<?php echo $base_path; ?>admin/users" class="dropdown-item">
+                                        <i class="fas fa-users w-5 text-center text-[#f2cf5b]"></i>
+                                        <?php echo translate('admin_users', 'User Management'); ?>
                                     </a>
                                 <?php endif; ?>
-
-                                <div class="dropdown-divider"></div>
-
-                                <a href="<?php echo $base_path; ?>vote" class="dropdown-item">
-                                    <i class="fas fa-vote-yea w-5 text-center text-[#4ade80]"></i>
-                                    <?php echo translate('vote', 'Vote'); ?>
-                                </a>
 
                                 <div class="dropdown-divider"></div>
 
@@ -688,28 +597,6 @@ $is_auth_page = in_array($page_class, ['login', 'register']);
                     </div>
                 <?php endif; ?>
 
-                <!-- Language Dropdown -->
-                <div id="langDropdownContainer">
-                    <div class="lang-btn" id="langSelected">
-                        <img src="<?php echo $current_lang_flag; ?>" alt="<?php echo htmlspecialchars($current_lang_name, ENT_QUOTES, 'UTF-8'); ?>" class="w-5 h-3.5 rounded-sm object-cover" id="flagIcon">
-                        <span id="langLabel"><?php echo htmlspecialchars($current_lang_name, ENT_QUOTES, 'UTF-8'); ?></span>
-                        <i class="fas fa-chevron-down text-[10px] ml-1"></i>
-                    </div>
-
-                    <ul class="wow-dropdown lang-options mt-3 w-44 hidden list-none p-0 m-0" id="langOptions">
-                        <?php foreach ($languages as $code => $lang_data): ?>
-                            <li data-value="<?php echo htmlspecialchars($code, ENT_QUOTES, 'UTF-8'); ?>"
-                                data-flag="<?php echo htmlspecialchars($lang_data['flag_url'], ENT_QUOTES, 'UTF-8'); ?>"
-                                data-name="<?php echo htmlspecialchars($lang_data['name'], ENT_QUOTES, 'UTF-8'); ?>"
-                                class="dropdown-item !py-2 !px-3 text-sm">
-                                <img src="<?php echo htmlspecialchars($lang_data['flag_url'], ENT_QUOTES, 'UTF-8'); ?>"
-                                     alt="<?php echo htmlspecialchars($lang_data['name'], ENT_QUOTES, 'UTF-8'); ?>"
-                                     class="w-5 h-3.5 rounded-sm object-cover">
-                                <span><?php echo htmlspecialchars($lang_data['name'], ENT_QUOTES, 'UTF-8'); ?></span>
-                            </li>
-                        <?php endforeach; ?>
-                    </ul>
-                </div>
             </div>
         </div>
     </header>

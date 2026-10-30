@@ -12,43 +12,25 @@ define('DB_CHAR', $db_char_name);
 define('DB_WORLD', $db_world_name);
 define('DB_SITE', $db_site_name);
 
-if (!isset($_SESSION['user_id']) || !in_array($_SESSION['role'], ['admin', 'moderator'])) {
+if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'admin') {
     header("Location: {$base_path}login");
     exit;
-}
-
-function getOnlineStatus($online) {
-    return $online 
-        ? '<span class="text-green-400 font-semibold"><i class="fas fa-circle text-green-400 text-xs mr-1"></i> ' . translate('admin_dashboard_status_online', 'Online') . '</span>' 
-        : '<span class="text-red-400 font-semibold"><i class="fas fa-circle text-red-400 text-xs mr-1"></i> ' . translate('admin_dashboard_status_offline', 'Offline') . '</span>';
-}
-
-function getAccountStatus($locked, $banInfo) {
-    if (!empty($banInfo)) {
-        return '<span class="text-red-400 font-semibold"><i class="fas fa-ban mr-1"></i> ' . translate('admin_dashboard_status_banned', 'Banned') . '</span>';
-    }
-    switch ($locked) {
-        case 1:
-            return '<span class="text-red-400 font-semibold"><i class="fas fa-ban mr-1"></i> ' . translate('admin_dashboard_status_banned', 'Banned') . '</span>';
-        case 2:
-            return '<span class="text-cyan-400 font-semibold"><i class="fas fa-snowflake mr-1"></i> ' . translate('admin_dashboard_status_frozen', 'Frozen') . '</span>';
-        default:
-            return '<span class="text-green-400 font-semibold"><i class="fas fa-check-circle mr-1"></i> ' . translate('admin_dashboard_status_active', 'Active') . '</span>';
-    }
 }
 
 global $site_db, $auth_db, $char_db;
 
 // Quick Stats
-$total_users_query = "SELECT COUNT(*) AS count FROM " . DB_SITE . ".user_currencies";
-$total_users_result = $site_db->query($total_users_query);
-$total_users = $total_users_result->fetch_assoc()['count'];
-$total_users_result->free();
+$stmt = $auth_db->prepare("SELECT COUNT(*) AS count FROM " . DB_AUTH . ".account WHERE username <> ?");
+$stmt->bind_param('s', $operator_service_username);
+$stmt->execute();
+$total_accounts = $stmt->get_result()->fetch_assoc()['count'];
+$stmt->close();
 
-$total_accounts_query = "SELECT COUNT(*) AS count FROM " . DB_AUTH . ".account";
-$total_accounts_result = $auth_db->query($total_accounts_query);
-$total_accounts = $total_accounts_result->fetch_assoc()['count'];
-$total_accounts_result->free();
+$stmt = $auth_db->prepare("SELECT COUNT(*) AS count FROM " . DB_AUTH . ".account WHERE username <> ? AND online = 1");
+$stmt->bind_param('s', $operator_service_username);
+$stmt->execute();
+$total_online = $stmt->get_result()->fetch_assoc()['count'];
+$stmt->close();
 
 $total_chars_query = "SELECT COUNT(*) AS count FROM " . DB_CHAR . ".characters";
 $total_chars_result = $char_db->query($total_chars_query);
@@ -59,77 +41,6 @@ $total_bans_query = "SELECT COUNT(*) AS count FROM " . DB_AUTH . ".account_banne
 $total_bans_result = $auth_db->query($total_bans_query);
 $total_bans = $total_bans_result->fetch_assoc()['count'];
 $total_bans_result->free();
-
-// Handle search and filter
-$search_username = isset($_GET['search_username']) ? trim($_GET['search_username']) : '';
-$search_email = isset($_GET['search_email']) ? trim($_GET['search_email']) : '';
-$role_filter = isset($_GET['role_filter']) && in_array($_GET['role_filter'], ['admin', 'moderator', '']) ? $_GET['role_filter'] : '';
-
-// Get recent admins/moderators
-$users_query = "SELECT account_id, username, points, tokens, role, last_updated
-                FROM " . DB_SITE . ".user_currencies
-                WHERE role IN ('admin', 'moderator')";
-$params = [];
-$types = '';
-
-if ($search_username) {
-    $users_query .= " AND username LIKE ?";
-    $params[] = "%$search_username%";
-    $types .= 's';
-}
-if ($role_filter) {
-    $users_query .= " AND role = ?";
-    $params[] = $role_filter;
-    $types .= 's';
-}
-$users_query .= " ORDER BY last_updated DESC LIMIT 5";
-
-$stmt = $site_db->prepare($users_query);
-if (!empty($params)) {
-    $stmt->bind_param($types, ...$params);
-}
-$stmt->execute();
-$users_result = $stmt->get_result();
-
-$users = [];
-$account_ids = [];
-while ($row = $users_result->fetch_assoc()) {
-    $users[$row['account_id']] = $row;
-    $account_ids[] = $row['account_id'];
-}
-$users_result->free();
-$stmt->close();
-
-if (!empty($account_ids)) {
-    $placeholders = implode(',', array_fill(0, count($account_ids), '?'));
-    $auth_query = "SELECT id, email, online, locked FROM " . DB_AUTH . ".account WHERE id IN ($placeholders)";
-    $stmt = $auth_db->prepare($auth_query);
-    $stmt->bind_param(str_repeat('i', count($account_ids)), ...$account_ids);
-    $stmt->execute();
-    $auth_result = $stmt->get_result();
-    while ($auth = $auth_result->fetch_assoc()) {
-        $aid = $auth['id'];
-        if (isset($users[$aid])) {
-            $users[$aid]['email'] = $auth['email'];
-            $users[$aid]['online'] = $auth['online'];
-            $users[$aid]['locked'] = $auth['locked'];
-        }
-    }
-    $auth_result->free();
-    $stmt->close();
-}
-
-if (!empty($account_ids)) {
-    $placeholders = implode(',', array_fill(0, count($account_ids), '?'));
-    $stmt = $auth_db->prepare("SELECT id, bandate, unbandate, banreason FROM " . DB_AUTH . ".account_banned WHERE id IN ($placeholders) AND active = 1");
-    $stmt->bind_param(str_repeat('i', count($account_ids)), ...$account_ids);
-    $stmt->execute();
-    $ban_result = $stmt->get_result();
-    while ($ban = $ban_result->fetch_assoc()) {
-        $users[$ban['id']]['banInfo'] = $ban;
-    }
-    $stmt->close();
-}
 
 // Get recent bans
 $bans_query = "SELECT ab.id, ab.bandate, ab.unbandate, ab.banreason, a.username 
@@ -145,9 +56,9 @@ $bans_result = $auth_db->query($bans_query);
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="description" content="<?php echo translate('admin_dashboard_meta_description', 'Admin and Moderator Dashboard for Sahtout WoW Server'); ?>">
+    <meta name="description" content="Playerbots realm operator dashboard">
     <meta name="robots" content="noindex">
-    <title><?php echo translate('admin_dashboard_page_title', 'Admin & Moderator Dashboard'); ?></title>
+    <title>Playerbots Realm Dashboard</title>
     <link rel="icon" href="<?php echo $base_path . $site_logo; ?>" type="image/x-icon">
     <link rel="stylesheet" href="<?php echo $base_path; ?>assets/css/tailwind.css">
     <link rel="stylesheet" href="<?php echo $base_path; ?>node_modules/@fortawesome/fontawesome-free/css/all.min.css">
@@ -224,27 +135,6 @@ $bans_result = $auth_db->query($bans_query);
             background-repeat: no-repeat;
         }
 
-        .btn-gold {
-            display: inline-flex;
-            align-items: center;
-            gap: .55rem;
-            padding: .75rem 1.5rem;
-            font-weight: 800;
-            font-size: .85rem;
-            letter-spacing: .04em;
-            text-transform: uppercase;
-            clip-path: polygon(10px 0, 100% 0, 100% calc(100% - 10px), calc(100% - 10px) 100%, 0 100%, 0 10px);
-            transition: transform .2s ease;
-            background: linear-gradient(180deg, #f6d478 0%, #c9a227 48%, #8a6a14 100%);
-            color: #1a1200;
-            text-shadow: 0 1px 0 rgba(255,255,255,.35);
-            box-shadow: inset 0 0 0 1px rgba(255,255,255,.28), inset 0 -8px 14px rgba(0,0,0,.25);
-            border: none;
-            cursor: pointer;
-        }
-
-        .btn-gold:hover { transform: translateY(-2px) scale(1.02); }
-
         .btn-iron {
             display: inline-flex;
             align-items: center;
@@ -264,26 +154,6 @@ $bans_result = $auth_db->query($bans_query);
         }
 
         .btn-iron:hover { transform: translateY(-2px) scale(1.02); }
-
-        .input-dark {
-            background: rgba(10, 14, 22, 0.8);
-            border: 1px solid rgba(201,162,39,.3);
-            color: #e5e7eb;
-            padding: 0.75rem 1rem;
-            font-size: 0.95rem;
-            transition: all 0.2s ease;
-            outline: none;
-            width: 100%;
-        }
-
-        .input-dark:focus {
-            border-color: #f2cf5b;
-            box-shadow: 0 0 10px rgba(242,207,82,.2);
-            background: rgba(15, 20, 30, 0.9);
-        }
-
-        .input-dark::placeholder { color: rgba(150, 170, 200, 0.4); }
-        .input-dark option { background: #0a0e16; }
 
         .table-dark th {
             background: rgba(10, 14, 22, 0.9);
@@ -396,9 +266,6 @@ $bans_result = $auth_db->query($bans_query);
             background: rgba(15, 20, 30, 0.7) !important;
         }
 
-        .status-admin { color: #f2cf5b; font-weight: 700; }
-        .status-moderator { color: #6a8cff; font-weight: 700; }
-
         /* Main content area - works with sidebar */
         .main-content-area {
             transition: margin-left 0.3s ease, width 0.3s ease;
@@ -466,7 +333,7 @@ $bans_result = $auth_db->query($bans_query);
             <div class="content-wrapper">
                 <div class="space-y-4 md:space-y-6 lg:space-y-8">
                     
-                    <h1 class="wow-title text-2xl md:text-3xl lg:text-4xl"><?php echo translate('admin_dashboard_title', 'Admin & Moderator Dashboard'); ?></h1>
+                    <h1 class="wow-title text-2xl md:text-3xl lg:text-4xl">Realm Dashboard</h1>
 
                     <!-- Server Status -->
                     <div class="panel p-4 md:p-6 lg:p-8">
@@ -482,9 +349,9 @@ $bans_result = $auth_db->query($bans_query);
                     <!-- Quick Stats -->
                     <div class="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">
                         <div class="panel p-4 md:p-6 text-center">
-                            <div class="stat-number text-xl md:text-2xl lg:text-3xl"><?php echo htmlspecialchars($total_users); ?></div>
-                            <div class="text-[#b8c8ff] text-xs md:text-sm font-semibold uppercase tracking-wider mt-1 md:mt-2"><?php echo translate('admin_dashboard_total_website_users', 'Website Users'); ?></div>
-                            <i class="fas fa-users text-[#f2cf5b]/30 text-lg md:text-2xl mt-1 md:mt-2"></i>
+                            <div class="stat-number text-xl md:text-2xl lg:text-3xl"><?php echo htmlspecialchars($total_online); ?></div>
+                            <div class="text-[#b8c8ff] text-xs md:text-sm font-semibold uppercase tracking-wider mt-1 md:mt-2">Online Accounts</div>
+                            <i class="fas fa-signal text-[#f2cf5b]/30 text-lg md:text-2xl mt-1 md:mt-2"></i>
                         </div>
                         <div class="panel p-4 md:p-6 text-center">
                             <div class="stat-number text-xl md:text-2xl lg:text-3xl"><?php echo htmlspecialchars($total_accounts); ?></div>
@@ -500,69 +367,6 @@ $bans_result = $auth_db->query($bans_query);
                             <div class="stat-number text-xl md:text-2xl lg:text-3xl text-red-400" style="-webkit-text-fill-color: #ff4d4d;"><?php echo htmlspecialchars($total_bans); ?></div>
                             <div class="text-[#b8c8ff] text-xs md:text-sm font-semibold uppercase tracking-wider mt-1 md:mt-2"><?php echo translate('admin_dashboard_active_bans', 'Active Bans'); ?></div>
                             <i class="fas fa-gavel text-red-400/30 text-lg md:text-2xl mt-1 md:mt-2"></i>
-                        </div>
-                    </div>
-
-                    <!-- Recent Admins & Moderators -->
-                    <div class="panel p-4 md:p-6 lg:p-8">
-                        <h2 class="section-title text-lg md:text-xl mb-4 md:mb-6 flex items-center gap-3">
-                            <i class="fas fa-user-shield text-[#f2cf5b]"></i>
-                            <?php echo translate('admin_dashboard_recent_staff_header', 'Recent Admins & Moderators'); ?>
-                        </h2>
-
-                        <form method="GET" action="<?php echo $base_path; ?>admin/dashboard" class="mb-4 md:mb-6">
-                            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">
-                                <input type="text" name="search_username" class="input-dark" placeholder="<?php echo translate('admin_dashboard_search_username_placeholder', 'Search username...'); ?>" value="<?php echo htmlspecialchars($search_username); ?>">
-                                <input type="text" name="search_email" class="input-dark" placeholder="<?php echo translate('admin_dashboard_search_email_placeholder', 'Search email...'); ?>" value="<?php echo htmlspecialchars($search_email); ?>">
-                                <select name="role_filter" class="input-dark">
-                                    <option value=""><?php echo translate('admin_dashboard_all_staff_roles', 'All Staff Roles'); ?></option>
-                                    <option value="moderator" <?php echo $role_filter === 'moderator' ? 'selected' : ''; ?>><?php echo translate('admin_dashboard_role_moderator', 'Moderator'); ?></option>
-                                    <option value="admin" <?php echo $role_filter === 'admin' ? 'selected' : ''; ?>><?php echo translate('admin_dashboard_role_admin', 'Admin'); ?></option>
-                                </select>
-                                <button type="submit" class="btn-gold justify-center">
-                                    <i class="fas fa-search"></i> <?php echo translate('admin_dashboard_apply_button', 'Apply'); ?>
-                                </button>
-                            </div>
-                        </form>
-
-                        <div class="overflow-x-auto -mx-4 md:-mx-6 lg:-mx-8 px-4 md:px-6 lg:px-8">
-                            <table class="w-full table-dark">
-                                <thead>
-                                    <tr>
-                                        <th><?php echo translate('admin_dashboard_table_username', 'Username'); ?></th>
-                                        <th class="hidden md:table-cell"><?php echo translate('admin_dashboard_table_email', 'Email'); ?></th>
-                                        <th><?php echo translate('admin_dashboard_table_points', 'Points'); ?></th>
-                                        <th class="hidden sm:table-cell"><?php echo translate('admin_dashboard_table_tokens', 'Tokens'); ?></th>
-                                        <th><?php echo translate('admin_dashboard_table_role', 'Role'); ?></th>
-                                        <th class="hidden lg:table-cell"><?php echo translate('admin_dashboard_table_online', 'Online'); ?></th>
-                                        <th class="hidden xl:table-cell"><?php echo translate('admin_dashboard_table_ban_status', 'Ban Status'); ?></th>
-                                        <th class="hidden 2xl:table-cell"><?php echo translate('admin_dashboard_table_last_updated', 'Updated'); ?></th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    <?php if (empty($users)): ?>
-                                        <tr>
-                                            <td colspan="8" class="text-center text-gray-400 py-6 md:py-8">
-                                                <i class="fas fa-users-slash text-2xl md:text-3xl text-gray-600 block mb-2"></i>
-                                                <?php echo translate('admin_dashboard_no_staff_found', 'No admins or moderators found.'); ?>
-                                            </td>
-                                        </tr>
-                                    <?php else: ?>
-                                        <?php foreach ($users as $user): ?>
-                                            <tr>
-                                                <td class="font-semibold text-white text-sm md:text-base"><?php echo htmlspecialchars($user['username']); ?></td>
-                                                <td class="hidden md:table-cell text-gray-400 text-sm"><?php echo htmlspecialchars($user['email'] ?? translate('admin_dashboard_email_not_set', 'Not set')); ?></td>
-                                                <td class="text-sm md:text-base"><?php echo htmlspecialchars($user['points']); ?></td>
-                                                <td class="hidden sm:table-cell text-sm md:text-base"><?php echo htmlspecialchars($user['tokens']); ?></td>
-                                                <td><span class="status-<?php echo htmlspecialchars($user['role']); ?> text-sm md:text-base"><?php echo ucfirst(translate('admin_dashboard_role_' . $user['role'], ucfirst($user['role']))); ?></span></td>
-                                                <td class="hidden lg:table-cell"><?php echo getOnlineStatus($user['online'] ?? 0); ?></td>
-                                                <td class="hidden xl:table-cell text-sm"><?php echo getAccountStatus($user['locked'] ?? 0, $user['banInfo'] ?? []); ?></td>
-                                                <td class="hidden 2xl:table-cell text-sm text-gray-400"><?php echo $user['last_updated'] ? date('M j, Y', strtotime($user['last_updated'])) : translate('admin_dashboard_never', 'Never'); ?></td>
-                                            </tr>
-                                        <?php endforeach; ?>
-                                    <?php endif; ?>
-                                </tbody>
-                            </table>
                         </div>
                     </div>
 

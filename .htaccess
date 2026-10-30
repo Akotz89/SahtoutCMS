@@ -1,5 +1,10 @@
 RewriteEngine On
 
+# SahtoutCMS remains a LAN account console. Native player registration is
+# enabled; community and monetization pages remain unavailable.
+RewriteRule ^(?:activate|resend_activation|forgot_password|reset_password|how_to_play|news|armory|shop|buy_item|vote|pingback|download)(?:/.*)?$ - [R=404,L,NC]
+RewriteRule ^admin/(?:anews|characters|ashop|gm_cmd|settings)(?:/.*)?$ - [R=404,L,NC]
+
 # Serve existing files and directories directly
 RewriteCond %{REQUEST_FILENAME} -f [OR]
 RewriteCond %{REQUEST_FILENAME} -d

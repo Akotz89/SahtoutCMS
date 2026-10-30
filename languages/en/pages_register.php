@@ -4,8 +4,8 @@ return [
     'meta_description' => 'Create an account to join our World of Warcraft server adventure!',
     'register_title' => 'Create Your Account',
     'username_placeholder' => 'Username',
-    'email_placeholder' => 'Email',
-    'password_placeholder' => 'Password',
+    'email_placeholder' => 'Email (optional)',
+    'password_placeholder' => 'Password (8-16 characters)',
     'password_confirm_placeholder' => 'Confirm Password',
     'register_button' => 'Register',
     'login_link_text' => 'Click here to login',
@@ -21,8 +21,8 @@ return [
     'error_recaptcha_failed' => 'CAPTCHA verification failed.',
     'error_username_invalid_length' => 'Username must be between 3 and 16 characters.',
     'error_username_invalid_chars' => 'Username can only contain letters and numbers.',
-    'error_email_invalid' => 'Invalid email address.',
-    'error_password_short' => 'Password must be at least 6 characters.',
+    'error_email_invalid' => 'Enter a valid email address or leave it empty.',
+    'error_password_short' => 'Password must contain 8-16 characters.',
     'error_password_mismatch' => 'Passwords do not match.',
     'error_account_pending' => 'An account with this username or email is already pending or registered. Please use a different username or email, or activate your existing account.',
     'error_username_exists' => 'Username already exists. Please choose a different username.',
@@ -30,6 +30,6 @@ return [
     'error_registration_failed' => 'Failed to store pending account.',
     'error_email_failed' => 'Failed to send activation email. Please contact support.',
     'success_account_created' => 'Account created. Check your email to activate your account.',
-    'success_account_created_no_email' => 'Account created successfully! You can now log in.'
+    'success_account_created_no_email' => 'Player account created successfully! You can now sign in through the WoW client.'
 ];
 ?>

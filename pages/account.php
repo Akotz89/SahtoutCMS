@@ -5,6 +5,7 @@ require_once __DIR__ . '/../includes/paths.php'; // Include paths.php
 require_once $project_root . 'includes/session.php';
 require_once $project_root . 'includes/srp6.php';
 require_once $project_root . 'includes/config.mail.php';
+require_once $project_root . 'includes/config.settings.php';
 require_once $project_root . 'languages/language.php'; // Include language file for translations
 
 // Early session validation
@@ -199,6 +200,125 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
     }
     
+    // Handle account username change. AzerothCore's SRP verifier is derived
+    // from both username and password, so both must be updated atomically.
+    if (isset($_POST['change_username'])) {
+        $new_username = strtoupper(trim($_POST['new_username'] ?? ''));
+        $current_password = $_POST['current_password'] ?? '';
+        $transaction_started = false;
+
+        try {
+            $current_username = strtoupper((string) $_SESSION['username']);
+            $reserved_usernames = [
+                strtoupper((string) $operator_owner_username),
+                strtoupper((string) $operator_service_username),
+            ];
+
+            if (in_array($current_username, $reserved_usernames, true)) {
+                throw new Exception('Reserved operator accounts cannot be renamed here.');
+            }
+            if (!preg_match('/^[A-Z0-9]{3,16}$/', $new_username)) {
+                throw new Exception('Username must contain 3-16 letters or numbers.');
+            }
+            if (in_array($new_username, $reserved_usernames, true)) {
+                throw new Exception('That username is reserved.');
+            }
+            if (hash_equals($current_username, $new_username)) {
+                throw new Exception('Enter a different username.');
+            }
+            if ($current_password === '') {
+                throw new Exception('Enter your current password.');
+            }
+
+            $stmt = $auth_db->prepare(
+                "SELECT id FROM account WHERE username = ? AND id <> ? LIMIT 1"
+            );
+            $stmt->bind_param('si', $new_username, $_SESSION['user_id']);
+            $stmt->execute();
+            $username_exists = $stmt->get_result()->num_rows > 0;
+            $stmt->close();
+            if ($username_exists) {
+                throw new Exception('That username is already in use.');
+            }
+
+            $stmt = $auth_db->prepare(
+                "SELECT username, salt, verifier FROM account WHERE id = ? LIMIT 1"
+            );
+            $stmt->bind_param('i', $_SESSION['user_id']);
+            $stmt->execute();
+            $account = $stmt->get_result()->fetch_assoc();
+            $stmt->close();
+            if (!$account) {
+                throw new Exception('Account not found.');
+            }
+            if (!SRP6::VerifyPassword($account['username'], $current_password, $account['salt'], $account['verifier'])) {
+                throw new Exception('Current password is incorrect.');
+            }
+
+            $new_salt = SRP6::GenerateSalt();
+            $new_verifier = SRP6::CalculateVerifier($new_username, $current_password, $new_salt);
+
+            $auth_db->begin_transaction();
+            $transaction_started = true;
+            $update = $auth_db->prepare(
+                "UPDATE account SET username = ?, salt = ?, verifier = ? WHERE id = ? AND username = ?"
+            );
+            $update->bind_param(
+                'sssis',
+                $new_username,
+                $new_salt,
+                $new_verifier,
+                $_SESSION['user_id'],
+                $account['username']
+            );
+            $update->execute();
+            if ($update->affected_rows !== 1) {
+                $update->close();
+                throw new mysqli_sql_exception('Account username update did not affect exactly one row.');
+            }
+            $update->close();
+            $auth_db->commit();
+            $transaction_started = false;
+
+            $old_username = (string) $account['username'];
+            $_SESSION['username'] = $new_username;
+            session_regenerate_id(true);
+            $_SESSION['last_regeneration'] = time();
+
+            try {
+                $stmt_log = $site_db->prepare(
+                    "INSERT INTO website_activity_log (account_id, character_name, action, timestamp, details) VALUES (?, NULL, ?, UNIX_TIMESTAMP(), ?)"
+                );
+                $action = 'Username Changed';
+                $details = $old_username . ' -> ' . $new_username;
+                $stmt_log->bind_param('iss', $_SESSION['user_id'], $action, $details);
+                $stmt_log->execute();
+                $stmt_log->close();
+            } catch (Throwable $log_error) {
+                error_log('Account username change audit failed: ' . $log_error->getMessage());
+            }
+
+            $_SESSION['message'] = 'Username changed successfully. Use ' . $new_username . ' for future logins.';
+            header("Location: {$base_path}account");
+            exit();
+        } catch (mysqli_sql_exception $e) {
+            if ($transaction_started) {
+                $auth_db->rollback();
+            }
+            error_log('Account username change failed: ' . $e->getMessage());
+            $_SESSION['error'] = 'Unable to change the username right now.';
+            header("Location: {$base_path}account");
+            exit();
+        } catch (Exception $e) {
+            if ($transaction_started) {
+                $auth_db->rollback();
+            }
+            $_SESSION['error'] = $e->getMessage();
+            header("Location: {$base_path}account");
+            exit();
+        }
+    }
+
     // Handle password change
     if (isset($_POST['change_password'])) {
         $current_password = $_POST['current_password'];
@@ -1004,6 +1124,28 @@ function getAvatarDisplayName($filename) {
                 <!-- SECURITY TAB -->
                 <div class="tab-pane hidden" id="tab-security">
                     <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                        <!-- Change Username -->
+                        <div class="glass-card p-6">
+                            <h3 class="text-xl font-bold text-[#f2cf5b] flex items-center gap-2">
+                                <i class="fas fa-user-edit"></i> Change Username
+                            </h3>
+                            <p class="text-sm text-gray-400 mt-2">Changes the account login name without moving or deleting any characters.</p>
+                            <form method="post" class="mt-4 space-y-4">
+                                <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars($_SESSION['csrf_token']); ?>">
+                                <div>
+                                    <label class="block text-sm text-gray-300 mb-1">New Username</label>
+                                    <input type="text" class="w-full px-4 py-2 bg-[rgba(0,0,0,0.4)] border border-[rgba(201,162,39,0.2)] text-gray-200 focus:border-[#f2cf5b] focus:outline-none transition-colors" name="new_username" required minlength="3" maxlength="16" pattern="[A-Za-z0-9]+" autocomplete="off" placeholder="3-16 letters or numbers">
+                                </div>
+                                <div>
+                                    <label class="block text-sm text-gray-300 mb-1"><?php echo translate('label_current_password', 'Current Password'); ?></label>
+                                    <input type="password" class="w-full px-4 py-2 bg-[rgba(0,0,0,0.4)] border border-[rgba(201,162,39,0.2)] text-gray-200 focus:border-[#f2cf5b] focus:outline-none transition-colors" name="current_password" required maxlength="16" autocomplete="current-password" placeholder="<?php echo translate('placeholder_current_password', 'Enter current password'); ?>">
+                                </div>
+                                <button class="px-6 py-2 bg-[rgba(242,207,82,0.15)] border border-[rgba(201,162,39,0.3)] text-[#f2cf5b] hover:bg-[rgba(242,207,82,0.25)] transition-all duration-300 font-semibold" type="submit" name="change_username">
+                                    <i class="fas fa-user-check mr-2"></i>Change Username
+                                </button>
+                            </form>
+                        </div>
+
                         <!-- Change Email -->
                         <div class="glass-card p-6">
                             <h3 class="text-xl font-bold text-[#f2cf5b] flex items-center gap-2">

@@ -130,75 +130,6 @@ if (strpos($current_path, 'admin/dashboard') !== false) {
         }
     }
 
-    /* Donation Button Styles - Reduced Size */
-    .donate-btn-wrapper {
-        padding: 6px 12px 2px 12px;
-    }
-    
-    .donate-btn-wrapper a {
-        display: block;
-        transition: all 0.3s ease;
-        border-radius: 4px;
-        overflow: hidden;
-    }
-    
-    .donate-btn-wrapper a:hover {
-        transform: translateX(2px) scale(1.01);
-        box-shadow: 0 0 20px rgba(201,162,39,0.15);
-    }
-    
-    .donate-btn-wrapper img {
-        width: 100%;
-        height: auto;
-        display: block;
-        border-radius: 4px;
-        border: 1px solid rgba(201,162,39,0.25);
-        transition: all 0.3s ease;
-        max-height: 60px;
-        object-fit: contain;
-    }
-    
-    .donate-btn-wrapper a:hover img {
-        border-color: #f2cf5b;
-        box-shadow: 0 0 15px rgba(201,162,39,0.1);
-    }
-    
-    .donate-btn-fallback {
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        gap: 8px;
-        padding: 6px 12px;
-        background: linear-gradient(135deg, rgba(201,162,39,0.15), rgba(201,162,39,0.04));
-        border: 1px solid rgba(201,162,39,0.3);
-        border-radius: 4px;
-        color: #f2cf5b;
-        font-family: 'Cinzel', serif;
-        font-weight: 700;
-        font-size: 0.7rem;
-        text-decoration: none;
-        transition: all 0.3s ease;
-        text-align: center;
-        letter-spacing: 0.3px;
-    }
-    
-    .donate-btn-fallback:hover {
-        background: linear-gradient(135deg, rgba(201,162,39,0.25), rgba(201,162,39,0.08));
-        border-color: #f2cf5b;
-        box-shadow: 0 0 20px rgba(201,162,39,0.15);
-        transform: translateX(2px);
-        color: #ffe066;
-    }
-    
-    .donate-btn-fallback i {
-        font-size: 0.75rem;
-        animation: heartPulse 2s ease-in-out infinite;
-    }
-    
-    @keyframes heartPulse {
-        0%, 100% { transform: scale(1); }
-        50% { transform: scale(1.15); }
-    }
 </style>
 
 <!-- Mobile Hamburger Button -->
@@ -252,6 +183,15 @@ if (strpos($current_path, 'admin/dashboard') !== false) {
                     <?php echo translate('admin_dashboard', 'Dashboard'); ?>
                 </a>
             </li>
+<?php if (($_SESSION['role'] ?? '') === 'admin'): ?>
+            <li>
+                <a class="group flex items-center gap-3 px-3 py-2.5 text-[0.85rem] font-semibold tracking-wide text-gray-400 bg-black/20 border-l-[3px] border-transparent hover:text-gray-200 hover:bg-[rgba(201,162,39,.08)] hover:border-[rgba(201,162,39,.4)] hover:translate-x-1 transition-all duration-200 relative clip-gaming <?php echo ($page_class === 'resources' || $active_page === 'resources') ? 'active-link' : ''; ?>" 
+                   href="<?php echo $base_path; ?>admin/resources">
+                    <i class="fas fa-server w-5 text-center text-[0.9rem] group-hover:scale-110 group-hover:text-[#f2cf5b] transition-all duration-300"></i> 
+                    Server Resources
+                </a>
+            </li>
+<?php endif; ?>
             
             <li>
                 <a class="group flex items-center gap-3 px-3 py-2.5 text-[0.85rem] font-semibold tracking-wide text-gray-400 bg-black/20 border-l-[3px] border-transparent hover:text-gray-200 hover:bg-[rgba(201,162,39,.08)] hover:border-[rgba(201,162,39,.4)] hover:translate-x-1 transition-all duration-200 relative clip-gaming <?php echo ($page_class === 'users' || $active_page === 'users') ? 'active-link' : ''; ?>" 
@@ -261,46 +201,6 @@ if (strpos($current_path, 'admin/dashboard') !== false) {
                 </a>
             </li>
             
-            <li>
-                <a class="group flex items-center gap-3 px-3 py-2.5 text-[0.85rem] font-semibold tracking-wide text-gray-400 bg-black/20 border-l-[3px] border-transparent hover:text-gray-200 hover:bg-[rgba(201,162,39,.08)] hover:border-[rgba(201,162,39,.4)] hover:translate-x-1 transition-all duration-200 relative clip-gaming <?php echo ($page_class === 'anews' || $active_page === 'anews') ? 'active-link' : ''; ?>" 
-                   href="<?php echo $base_path; ?>admin/anews">
-                    <i class="fas fa-newspaper w-5 text-center text-[0.9rem] group-hover:scale-110 group-hover:text-[#f2cf5b] transition-all duration-300"></i> 
-                    <?php echo translate('admin_news', 'News Management'); ?>
-                </a>
-            </li>
-            
-            <li>
-                <a class="group flex items-center gap-3 px-3 py-2.5 text-[0.85rem] font-semibold tracking-wide text-gray-400 bg-black/20 border-l-[3px] border-transparent hover:text-gray-200 hover:bg-[rgba(201,162,39,.08)] hover:border-[rgba(201,162,39,.4)] hover:translate-x-1 transition-all duration-200 relative clip-gaming <?php echo ($page_class === 'characters' || $active_page === 'characters') ? 'active-link' : ''; ?>" 
-                   href="<?php echo $base_path; ?>admin/characters">
-                    <i class="fas fa-user-edit w-5 text-center text-[0.9rem] group-hover:scale-110 group-hover:text-[#f2cf5b] transition-all duration-300"></i> 
-                    <?php echo translate('admin_characters', 'Character Management'); ?>
-                </a>
-            </li>
-            
-            <li>
-                <a class="group flex items-center gap-3 px-3 py-2.5 text-[0.85rem] font-semibold tracking-wide text-gray-400 bg-black/20 border-l-[3px] border-transparent hover:text-gray-200 hover:bg-[rgba(201,162,39,.08)] hover:border-[rgba(201,162,39,.4)] hover:translate-x-1 transition-all duration-200 relative clip-gaming <?php echo ($page_class === 'shop' || $active_page === 'shop') ? 'active-link' : ''; ?>" 
-                   href="<?php echo $base_path; ?>admin/ashop">
-                    <i class="fas fa-shopping-cart w-5 text-center text-[0.9rem] group-hover:scale-110 group-hover:text-[#f2cf5b] transition-all duration-300"></i> 
-                    <?php echo translate('admin_shop', 'Shop Management'); ?>
-                </a>
-            </li>
-            
-            <li>
-                <a class="group flex items-center gap-3 px-3 py-2.5 text-[0.85rem] font-semibold tracking-wide text-gray-400 bg-black/20 border-l-[3px] border-transparent hover:text-gray-200 hover:bg-[rgba(201,162,39,.08)] hover:border-[rgba(201,162,39,.4)] hover:translate-x-1 transition-all duration-200 relative clip-gaming <?php echo ($page_class === 'gm_cmd' || $active_page === 'gm_cmd') ? 'active-link' : ''; ?>" 
-                   href="<?php echo $base_path; ?>admin/gm_cmd">
-                    <i class="fas fa-terminal w-5 text-center text-[0.9rem] group-hover:scale-110 group-hover:text-[#f2cf5b] transition-all duration-300"></i> 
-                    <?php echo translate('admin_gm_commands', 'GM Commands'); ?>
-                </a>
-            </li>
-            
-            <li>
-                <a class="group flex items-center gap-3 px-3 py-2.5 text-[0.85rem] font-semibold tracking-wide text-gray-400 bg-black/20 border-l-[3px] border-transparent hover:text-gray-200 hover:bg-[rgba(201,162,39,.08)] hover:border-[rgba(201,162,39,.4)] hover:translate-x-1 transition-all duration-200 relative clip-gaming <?php echo ($page_class === 'settings' || $active_page === 'settings') ? 'active-link' : ''; ?>" 
-                   href="<?php echo $base_path; ?>admin/settings/general">
-                    <i class="fas fa-cogs w-5 text-center text-[0.9rem] group-hover:scale-110 group-hover:text-[#f2cf5b] transition-all duration-300"></i> 
-                    <?php echo translate('admin_settings', 'Settings'); ?>
-                </a>
-            </li>
-
             <!-- Divider -->
             <li class="my-3 px-2">
                 <div class="relative flex items-center">
@@ -322,26 +222,9 @@ if (strpos($current_path, 'admin/dashboard') !== false) {
         </ul>
     </nav>
 
-    <!-- Donation Button (above footer) - Reduced Size -->
-    <div class="relative z-10 donate-btn-wrapper flex-shrink-0">
-        <?php 
-        $donate_image = __DIR__ . '/../img/support-button.png';
-        if (file_exists($donate_image)): ?>
-            <a href="https://blodyiheb.vercel.app/#payment-methods" target="_blank" rel="noopener noreferrer">
-                <img src="<?php echo $base_path; ?>img/support-button.png" alt="Support the Server - Donate" loading="lazy">
-            </a>
-        <?php else: ?>
-            <a href="https://blodyiheb.vercel.app/#payment-methods" target="_blank" rel="noopener noreferrer" class="donate-btn-fallback">
-                <i class="fas fa-heart"></i>
-                <span><?php echo translate('donate', 'Support'); ?></span>
-                <i class="fas fa-heart"></i>
-            </a>
-        <?php endif; ?>
-    </div>
-
     <!-- Footer -->
     <div class="relative z-10 px-4 py-3 border-t border-[rgba(201,162,39,.1)] flex-shrink-0 text-center text-[0.65rem] text-gray-500 font-['Inter'] tracking-widest uppercase">
-        <span>© <?php echo date('Y'); ?> Sahtout WoW</span>
+        <span>Playerbots Realm Administration</span>
     </div>
 </aside>
 
