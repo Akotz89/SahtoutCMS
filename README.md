@@ -696,7 +696,7 @@ Made with ❤️ by **Blodyiheb**
 ### Playerbots LAN account console
 
 This fork adds the realm's account-management controls to upstream. The bundled
-web installer is blocked by the production `.htaccess`; initial setup requires a
+web installer is blocked by the root and installer `.htaccess` files; initial setup requires a
 separate, local-only development virtual host configured without that override.
 Remove that virtual host after setup; do not expose it on the served console.
 
