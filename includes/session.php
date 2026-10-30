@@ -25,6 +25,17 @@ session_start();
 require_once __DIR__ . '/paths.php';
 // Include database configuration
 require_once $project_root . 'includes/config.php';
+function credentialFingerprint(string $salt, string $verifier): string {
+    return hash('sha256', pack('N', strlen($salt)) . $salt . $verifier);
+}
+function sessionCredentialsMatch(array $account): bool {
+    $fingerprint = $_SESSION['credential_fingerprint'] ?? null;
+    return is_string($fingerprint) && is_string($account['salt'] ?? null)
+        && is_string($account['verifier'] ?? null)
+        && hash_equals($fingerprint, credentialFingerprint($account['salt'], $account['verifier']));
+}
+$operator_owner_username = $operator_owner_username ?? (getenv('CMS_OWNER_USERNAME') ?: '');
+$operator_service_username = $operator_service_username ?? (getenv('CMS_SERVICE_USERNAME') ?: '');
 
 // Initialize debug errors
 $_SESSION['debug_errors'] = $_SESSION['debug_errors'] ?? [];
@@ -42,8 +53,28 @@ if (empty($_SESSION['csrf_token'])) {
 
 // Define protected and admin pages
 $protected_pages = ['account.php', 'buy_item.php'];
-$admin_pages = ['dashboard.php', 'users.php', 'anews.php','characters.php','ashop.php','gm_cmd.php', 'logout.php','save_general.php'];
+$admin_pages = ['resources.php', 'dashboard.php', 'users.php', 'anews.php','characters.php','ashop.php','gm_cmd.php', 'logout.php','save_general.php'];
 $current_page = basename($_SERVER['PHP_SELF']);
+
+// Validate credentials on every request, including pages available to guests.
+if (!empty($_SESSION['user_id']) || !empty($_SESSION['username'])) {
+    $valid_credentials = false;
+    if (!empty($_SESSION['user_id']) && !empty($_SESSION['username'])) {
+        $stmt = $auth_db->prepare("SELECT id, salt, verifier FROM account WHERE id = ? AND username = ?");
+        $stmt->bind_param('is', $_SESSION['user_id'], $_SESSION['username']);
+        $stmt->execute();
+        $result = $stmt->get_result();
+        $valid_credentials = $result->num_rows === 1 && sessionCredentialsMatch($result->fetch_assoc());
+        $stmt->close();
+    }
+    if (!$valid_credentials) {
+        session_unset();
+        session_regenerate_id(true);
+        $_SESSION['debug_errors'] = [];
+        $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
+        $_SESSION['last_regeneration'] = time();
+    }
+}
 
 // Validate session for protected and admin pages
 if (in_array($current_page, $protected_pages) || in_array($current_page, $admin_pages)) {
@@ -55,21 +86,6 @@ if (in_array($current_page, $protected_pages) || in_array($current_page, $admin_
         header('Location: ' . $base_path . 'login?error=invalid_session');
         exit();
     }
-
-    // Validate user_id and username against auth database
-    /** @var \mysqli_stmt|false $stmt */
-    $stmt = $auth_db->prepare("SELECT id, username FROM account WHERE id = ? AND username = ?");
-    $stmt->bind_param('is', $_SESSION['user_id'], $_SESSION['username']);
-    $stmt->execute();
-    $result = $stmt->get_result();
-    if ($result->num_rows !== 1) {
-        $_SESSION['debug_errors'] = ["Invalid session data. User ID or username mismatch."];
-        session_unset();
-        session_destroy();
-        header('Location: ' . $base_path . 'login?error=invalid_session');
-        exit();
-    }
-    $stmt->close();
 
     // Load user role
     /** @var \mysqli_stmt|false $stmt */
@@ -100,18 +116,14 @@ if (in_array($current_page, $protected_pages) || in_array($current_page, $admin_
 // For login, register, and activate pages, redirect to account if already logged in
 $public_pages = ['login.php', 'register.php', 'activate.php','forgot_password.php', 'reset_password.php','resend_activation.php'];
 if (in_array($current_page, $public_pages) && !empty($_SESSION['user_id']) && !empty($_SESSION['username'])) {
-    /** @var \mysqli_stmt|false $stmt */
-    $stmt = $auth_db->prepare("SELECT id FROM account WHERE id = ? AND username = ?");
-    $stmt->bind_param('is', $_SESSION['user_id'], $_SESSION['username']);
-    $stmt->execute();
-    $result = $stmt->get_result();
-    if ($result->num_rows === 1) {
-        header('Location: ' . $base_path . 'account');
-        exit();
-    }
-    $_SESSION['debug_errors'] = ["Invalid session data on public page."];
-    session_unset();
-    session_destroy();
-    $stmt->close();
+    $role_stmt = $site_db->prepare("SELECT role FROM user_currencies WHERE account_id = ? LIMIT 1");
+    $role_stmt->bind_param('i', $_SESSION['user_id']);
+    $role_stmt->execute();
+    $role_result = $role_stmt->get_result();
+    $_SESSION['role'] = $role_result->num_rows === 1 ? $role_result->fetch_assoc()['role'] : 'player';
+    $role_stmt->close();
+    $destination = $_SESSION['role'] === 'admin' ? 'admin/users' : 'account';
+    header('Location: ' . $base_path . $destination);
+    exit();
 }
 ?>

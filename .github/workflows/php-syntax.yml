@@ -11,3 +11,12 @@ jobs:
       - uses: actions/checkout@v4
       - name: Check tracked PHP files
         run: git ls-files -z '*.php' | xargs -0 -r -n1 php -l
+      - name: Check account behavior
+        run: |
+          php tests/account_username_test.php
+          php tests/session_credentials_test.php
+          php tests/self_service_session_test.php
+          php tests/admin_guard_test.php
+          php tests/register_test.php
+      - name: Check Apache installer and recovery routes
+        run: bash tests/apache_routes_test.sh

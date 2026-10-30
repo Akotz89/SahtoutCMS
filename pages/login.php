@@ -484,6 +484,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
                                 $_SESSION['user_id'] = $account['id'];
                                 $_SESSION['username'] = $account['username'];
+                                $_SESSION['credential_fingerprint'] = credentialFingerprint($account['salt'], $account['verifier']);
                                 $_SESSION['email'] = $account['email'];
                                 $_SESSION['last_regeneration'] = time();
 
@@ -510,7 +511,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                     $username
                                 );
 
-                                header("Location: {$base_path}account");
+                                $role_stmt = $site_db->prepare("SELECT role FROM user_currencies WHERE account_id = ? LIMIT 1");
+                                $role_stmt->bind_param('i', $account['id']);
+                                $role_stmt->execute();
+                                $role_result = $role_stmt->get_result();
+                                $_SESSION['role'] = $role_result->num_rows === 1 ? $role_result->fetch_assoc()['role'] : 'player';
+                                $role_stmt->close();
+                                $destination = $_SESSION['role'] === 'admin' ? 'admin/users' : 'account';
+                                header("Location: {$base_path}{$destination}");
                                 exit();
                             } else {
                                 $attempts = logFailedAttempt(
@@ -766,6 +774,7 @@ include_once $project_root . 'includes/header.php';
                         <?php echo translate('register_link_text_simple', 'Register'); ?>
                     </a>
                 </div>
+
 
                 <div class="text-center text-gray-400 text-sm">
                     <a

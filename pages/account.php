@@ -4,6 +4,7 @@ define('ALLOWED_ACCESS', true);
 require_once __DIR__ . '/../includes/paths.php'; // Include paths.php
 require_once $project_root . 'includes/session.php';
 require_once $project_root . 'includes/srp6.php';
+require_once $project_root . 'includes/account_username.php';
 require_once $project_root . 'includes/config.mail.php';
 require_once $project_root . 'languages/language.php'; // Include language file for translations
 require_once $project_root . 'includes/config.settings.php';
@@ -136,6 +137,39 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         exit();
     }
 
+    if (isset($_POST['change_username'])) {
+        try {
+            if ($db_auth_host !== $db_site_host || (string) $db_auth_port !== (string) $db_site_port) {
+                throw new RuntimeException('Account rename requires both databases on the same server.');
+            }
+            $new_username = strtoupper(trim($_POST['new_username'] ?? ''));
+            $old_username = (string) $_SESSION['username'];
+            [$new_salt, $new_verifier] = changeAccountUsername($auth_db, $db_site_name, (int) $_SESSION['user_id'], $old_username, $new_username, (string) ($_POST['current_password'] ?? ''), [$operator_owner_username ?? null, $operator_service_username ?? null]);
+            $_SESSION['username'] = $new_username;
+            $_SESSION['credential_fingerprint'] = credentialFingerprint($new_salt, $new_verifier);
+            session_regenerate_id(true);
+            $_SESSION['last_regeneration'] = time();
+            try {
+                $stmt_log = $site_db->prepare('INSERT INTO website_activity_log (account_id, character_name, action, timestamp, details) VALUES (?, NULL, ?, UNIX_TIMESTAMP(), ?)');
+                $action = 'Username Changed';
+                $details = $old_username . ' -> ' . $new_username;
+                $stmt_log->bind_param('iss', $_SESSION['user_id'], $action, $details);
+                $stmt_log->execute();
+                $stmt_log->close();
+            } catch (Throwable $log_error) {
+                error_log('Account username change audit failed: ' . $log_error->getMessage());
+            }
+            $_SESSION['message'] = 'Username changed successfully.';
+        } catch (InvalidArgumentException $e) {
+            $_SESSION['error'] = $e->getMessage();
+        } catch (Throwable $e) {
+            error_log('Account username change failed: ' . $e->getMessage());
+            $_SESSION['error'] = 'Unable to change the username right now.';
+        }
+        header("Location: {$base_path}account");
+        exit();
+    }
+
     // Handle email change
     if (isset($_POST['change_email'])) {
         $new_email = trim($_POST['new_email'] ?? '');
@@ -249,19 +283,25 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $new_salt = SRP6::GenerateSalt();
             $new_verifier = SRP6::CalculateVerifier($_SESSION['username'], $new_password, $new_salt);
             
-            $update = $auth_db->prepare("UPDATE account SET salt = ?, verifier = ? WHERE id = ?");
-            $update->bind_param('ssi', $new_salt, $new_verifier, $_SESSION['user_id']);
-            if (!$update->execute()) {
+            $update = $auth_db->prepare("UPDATE account SET salt = ?, verifier = ? WHERE id = ? AND username = ? AND salt = ? AND verifier = ?");
+            $update->bind_param('ssisss', $new_salt, $new_verifier, $_SESSION['user_id'], $_SESSION['username'], $row['salt'], $row['verifier']);
+            if (!$update->execute() || $update->affected_rows !== 1) {
                 throw new Exception(translate('error_updating_password', 'Error updating password'));
             }
             $update->close();
+            $_SESSION['credential_fingerprint'] = credentialFingerprint($new_salt, $new_verifier);
+            session_regenerate_id(true);
+            $_SESSION['last_regeneration'] = time();
 
-            // Log action
-            $stmt_log = $site_db->prepare("INSERT INTO website_activity_log (account_id, character_name, action, timestamp) VALUES (?, NULL, ?, UNIX_TIMESTAMP())");
-            $action = translate('action_password_changed', 'Password Changed');
-            $stmt_log->bind_param('is', $_SESSION['user_id'], $action);
-            $stmt_log->execute();
-            $stmt_log->close();
+            try {
+                $stmt_log = $site_db->prepare("INSERT INTO website_activity_log (account_id, character_name, action, timestamp) VALUES (?, NULL, ?, UNIX_TIMESTAMP())");
+                $action = translate('action_password_changed', 'Password Changed');
+                $stmt_log->bind_param('is', $_SESSION['user_id'], $action);
+                $stmt_log->execute();
+                $stmt_log->close();
+            } catch (Throwable $log_error) {
+                error_log('Account password change audit failed: ' . $log_error->getMessage());
+            }
 
             if ($account_email !== '') {
                 sendAccountSecurityEmail($_SESSION['username'], $account_email, 'password_changed');
@@ -1498,6 +1538,16 @@ include_once $project_root . 'includes/header.php';
                 <!-- SECURITY TAB -->
                 <div class="tab-pane hidden" id="tab-security">
                     <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                        <div class="glass-card p-6">
+                            <h3 class="text-xl font-bold text-[#f2cf5b]">Change Username</h3>
+                            <p class="text-sm text-gray-400 mt-2">Changes the account login name without moving or deleting characters.</p>
+                            <form method="post" class="mt-4 space-y-4">
+                                <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars($_SESSION['csrf_token']); ?>">
+                                <label class="block text-sm text-gray-300">New Username <input class="w-full px-4 py-2 bg-[rgba(0,0,0,0.4)] text-gray-200" type="text" name="new_username" required minlength="3" maxlength="16" pattern="[A-Za-z0-9]+" autocomplete="off"></label>
+                                <label class="block text-sm text-gray-300">Current Password <input class="w-full px-4 py-2 bg-[rgba(0,0,0,0.4)] text-gray-200" type="password" name="current_password" required maxlength="16" autocomplete="current-password"></label>
+                                <button class="px-6 py-2 border border-[rgba(201,162,39,0.3)] text-[#f2cf5b]" type="submit" name="change_username">Change Username</button>
+                            </form>
+                        </div>
                         <!-- Change Email -->
                         <div class="glass-card p-6">
                             <h3 class="text-xl font-bold text-[#f2cf5b] flex items-center gap-2">

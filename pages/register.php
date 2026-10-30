@@ -87,6 +87,7 @@ $errors = [];
 $success = '';
 $username = '';
 $email = '';
+$is_smtp_enabled = isset($smtp_enabled) && $smtp_enabled === true;
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     // Verify CSRF token before processing the registration (token generated centrally in includes/session.php)
@@ -116,17 +117,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 
     // Validation
-    if (strlen($username) < 3 || strlen($username) > 17) {
-        $errors[] = translate('error_username_invalid_length', 'Username must be between 3 and 17 characters.');
+    if (strlen($username) < 3 || strlen($username) > 16) {
+        $errors[] = translate('error_username_invalid_length', 'Username must be between 3 and 16 characters.');
     }
     if (!preg_match('/^[a-zA-Z0-9]+$/', $username)) {
         $errors[] = translate('error_username_invalid_chars', 'Username can only contain letters and numbers.');
     }
-    if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
+    if (!is_string($operator_owner_username ?? null) || !is_string($operator_service_username ?? null) || trim($operator_owner_username) === '' || trim($operator_service_username) === '') {
+        $errors[] = 'Registration is temporarily unavailable.';
+    } elseif (in_array(strtoupper($username), [strtoupper(trim($operator_owner_username)), strtoupper(trim($operator_service_username))], true)) {
+        $errors[] = 'That username is reserved.';
+    }
+    if (($email === '' && $is_smtp_enabled) || ($email !== '' && !filter_var($email, FILTER_VALIDATE_EMAIL))) {
         $errors[] = translate('error_email_invalid', 'Invalid email address.');
     }
-    if (strlen($password) < 6 || strlen($password) > 16) {
-        $errors[] = translate('error_password_length', 'Password must be between 6 and 16 characters.');
+    if (strlen($password) < 8 || strlen($password) > 16) {
+        $errors[] = translate('error_password_length', 'Password must be between 8 and 16 characters.');
     }
     if ($password !== $confirm_password) {
         $errors[] = translate('error_password_mismatch', 'Passwords do not match.');
@@ -135,12 +141,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     // Check for existing username and email in pending_accounts
     if (empty($errors)) {
         $upper_username = strtoupper($username);
-        $stmt = $site_db->prepare("SELECT username, email FROM pending_accounts WHERE username = ? OR email = ?");
+        $stmt = $site_db->prepare("SELECT username, email FROM pending_accounts WHERE username = ? OR (? <> '' AND email = ?)");
         if (!$stmt) {
             error_log("Register: Pending accounts prepare failed: " . $site_db->error);
             $errors[] = translate('error_database', 'Database error. Please try again later.');
         } else {
-            $stmt->bind_param('ss', $upper_username, $email);
+            $stmt->bind_param('sss', $upper_username, $email, $email);
             $stmt->execute();
             $result = $stmt->get_result();
             if ($result->num_rows > 0) {
@@ -172,12 +178,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
 
         // Check if email exists
-        $stmt = $auth_db->prepare("SELECT id FROM account WHERE email = ?");
+        $stmt = $auth_db->prepare("SELECT id FROM account WHERE ? <> '' AND email = ?");
         if (!$stmt) {
             error_log("Register: Account email prepare failed: " . $auth_db->error);
             $errors[] = translate('error_database', 'Database error. Please try again later.');
         } else {
-            $stmt->bind_param('s', $email);
+            $stmt->bind_param('ss', $email, $email);
             $stmt->execute();
             $result = $stmt->get_result();
             if ($result->num_rows > 0) {
@@ -199,9 +205,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         ];
 
         // Check if SMTP is enabled
-        global $smtp_enabled;
-        $is_smtp_enabled = isset($smtp_enabled) && $smtp_enabled === true;
-
         if ($is_smtp_enabled) {
             // SMTP enabled: Store in pending_accounts and send activation email
             $token = bin2hex(random_bytes(32));
@@ -236,18 +239,29 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         } else {
             // SMTP disabled: Directly create account in acore_auth.account
             $upper_username = strtoupper($account['username']);
-            $stmt_insert = $auth_db->prepare("INSERT INTO account (username, salt, verifier, email, reg_mail, expansion) VALUES (?, ?, ?, ?, ?, 2)");
-            if (!$stmt_insert) {
-                error_log("Register: Insert account prepare failed: " . $auth_db->error);
-                $errors[] = translate('error_database', 'Database error. Please try again later.');
-            } else {
-                $stmt_insert->bind_param('sssss', $upper_username, $account['salt'], $account['verifier'], $account['email'], $account['email']);
-                if ($stmt_insert->execute()) {
-                    $success = translate('success_account_created_no_email', 'Account created successfully! You can now log in.');
+            $stmt_insert = null;
+            try {
+                $stmt_insert = $auth_db->prepare("INSERT INTO account (username, salt, verifier, email, reg_mail, expansion) VALUES (?, ?, ?, ?, ?, 2)");
+                if (!$stmt_insert) {
+                    error_log("Register: Insert account prepare failed: " . $auth_db->error);
+                    $errors[] = translate('error_database', 'Database error. Please try again later.');
                 } else {
-                    $errors[] = translate('error_registration_failed', 'Failed to create account.');
+                    $stmt_insert->bind_param('sssss', $upper_username, $account['salt'], $account['verifier'], $account['email'], $account['email']);
+                    if ($stmt_insert->execute()) {
+                        $success = translate('success_account_created_no_email', 'Account created successfully! You can now log in.');
+                    } else {
+                        $errors[] = translate('error_registration_failed', 'Failed to create account.');
+                    }
                 }
-                $stmt_insert->close();
+            } catch (mysqli_sql_exception $e) {
+                if ($e->getCode() === 1062) {
+                    $errors[] = translate('error_account_exists', 'Username or email already exists.');
+                } else {
+                    error_log('Register: account insert failed');
+                    $errors[] = translate('error_database', 'Database error. Please try again later.');
+                }
+            } finally {
+                if ($stmt_insert) $stmt_insert->close();
             }
         }
     }
@@ -466,22 +480,22 @@ include_once $project_root . 'includes/header.php';
                 <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars($_SESSION['csrf_token']); ?>">
                 <div>
                     <i class="fas fa-user text-[rgba(201,162,39,0.4)] absolute mt-3.5 ml-3"></i>
-                    <input type="text" name="username" minlength="3" maxlength="17" placeholder="<?php echo translate('username_placeholder', 'Username'); ?>" required value="<?php echo htmlspecialchars($username); ?>" class="input-register w-full pl-10 pr-4 py-3 text-base">
+                    <input type="text" name="username" minlength="3" maxlength="16" placeholder="<?php echo translate('username_placeholder', 'Username'); ?>" required value="<?php echo htmlspecialchars($username); ?>" class="input-register w-full pl-10 pr-4 py-3 text-base">
                 </div>
                 
                 <div>
                     <i class="fas fa-envelope text-[rgba(201,162,39,0.4)] absolute mt-3.5 ml-3"></i>
-                    <input type="email" name="email" placeholder="<?php echo translate('email_placeholder', 'Email'); ?>" required minlength="3" maxlength="100" value="<?php echo htmlspecialchars($email); ?>" class="input-register w-full pl-10 pr-4 py-3 text-base">
+                    <input type="email" name="email" placeholder="<?php echo translate('email_placeholder', 'Email'); ?>" <?php echo $is_smtp_enabled ? 'required' : ''; ?> maxlength="100" value="<?php echo htmlspecialchars($email); ?>" class="input-register w-full pl-10 pr-4 py-3 text-base">
                 </div>
                 
                 <div>
                     <i class="fas fa-lock text-[rgba(201,162,39,0.4)] absolute mt-3.5 ml-3"></i>
-                    <input type="password" name="password" placeholder="<?php echo translate('password_placeholder', 'Password'); ?>" required minlength="6" maxlength="16" class="input-register w-full pl-10 pr-4 py-3 text-base">
+                    <input type="password" name="password" placeholder="<?php echo translate('password_placeholder', 'Password'); ?>" required minlength="8" maxlength="16" class="input-register w-full pl-10 pr-4 py-3 text-base">
                 </div>
                 
                 <div>
                     <i class="fas fa-check-circle text-[rgba(201,162,39,0.4)] absolute mt-3.5 ml-3"></i>
-                    <input type="password" name="confirm_password" placeholder="<?php echo translate('password_confirm_placeholder', 'Confirm Password'); ?>" required minlength="6" maxlength="16" class="input-register w-full pl-10 pr-4 py-3 text-base">
+                    <input type="password" name="confirm_password" placeholder="<?php echo translate('password_confirm_placeholder', 'Confirm Password'); ?>" required minlength="8" maxlength="16" class="input-register w-full pl-10 pr-4 py-3 text-base">
                 </div>
 
                 <?php if (defined('RECAPTCHA_ENABLED') && RECAPTCHA_ENABLED): ?>
