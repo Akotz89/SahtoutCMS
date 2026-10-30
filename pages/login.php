@@ -484,6 +484,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
                                 $_SESSION['user_id'] = $account['id'];
                                 $_SESSION['username'] = $account['username'];
+                                $_SESSION['credential_fingerprint'] = credentialFingerprint($account['salt'], $account['verifier']);
                                 $_SESSION['email'] = $account['email'];
                                 $_SESSION['last_regeneration'] = time();
 
