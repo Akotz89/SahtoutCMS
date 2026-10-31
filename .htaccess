@@ -2,6 +2,7 @@ RewriteEngine On
 
 # The setup wizard must not be exposed by a served console.
 RewriteRule ^install(?:/.*)?$ - [R=404,L,NC]
+RewriteRule ^deployment(?:/.*)?$ - [R=404,L,NC]
 
 # Serve existing files and directories directly
 RewriteCond %{REQUEST_FILENAME} -f [OR]
